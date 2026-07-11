@@ -1,0 +1,43 @@
+---
+description: Software Factory full-template checklist enforcement for Work Order execution
+globs:
+  - ".sw-factory/**"
+alwaysApply: true
+---
+
+# Software Factory Checklist Enforcement
+
+## Full Template Required
+
+Never use an abbreviated 5-line summary checklist. Always use:
+
+`.cursor/skills/software-factory/execution/scripts/checklist-template.md`
+
+## Completion States
+
+Every checklist item must end in one of two states:
+
+- `[x]` — checked complete with evidence
+- `[SKIP]` — with explicit skip reason
+
+Unchecked items are **execution failures**, not TODOs.
+
+## Validator Gate
+
+Before MCP `completed` status move:
+
+```bash
+python .cursor/skills/rareangels-light-overnight/scripts/validate_sf_checklist.py --wo <n>
+```
+
+Must exit 0.
+
+## SF State Reflection
+
+Reflect state to SF at every phase boundary via `edit_work_order` + `add_comment`. See `.cursor/skills/rareangels-coding-process/references/sf-state-reflection.md`.
+
+The `completed` move is gated by posting the evidence comment FIRST, then moving status.
+
+## Safe Commit + Push
+
+After every WO: stage only owned paths → commit → `git push origin main`. Never `--force` / `--force-with-lease` / `--no-verify`.

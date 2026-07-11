@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rarecrest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rarecrest
+      POSTGRES_USER: rarecrest_admin
+      POSTGRES_PASSWORD: rarecrest_dev_password
+      # Enable WAL archiving for PITR simulation
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/backups:/backups
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "archive_mode=on"
+      - "-c"
+      - "archive_command=cp %p /backups/wal/%f"
+      - "-c"
+      - "max_wal_senders=3"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rarecrest_admin -d rarecrest"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rarecrest-internal
+
+  minio:
+    image: minio/minio:latest
+    container_name: rarecrest-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: rarecrest_minio
+      MINIO_ROOT_PASSWORD: rarecrest_minio_dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - rarecrest-internal
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: rarecrest-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - rarecrest-internal
+
+volumes:
+  postgres_data:
+  minio_data:
+  qdrant_data:
+
+networks:
+  rarecrest-internal:
+    driver: bridge
+    internal: false

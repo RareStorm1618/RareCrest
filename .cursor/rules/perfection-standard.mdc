@@ -1,0 +1,38 @@
+---
+description: Grade-10 perfection standard for all Work Order implementations
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Perfection Standard (Grade 10)
+
+All Work Order implementations must achieve **code_grade 10** before handoff.
+
+## Prohibited Patterns
+
+- `NotImplementedError`, `unimplemented!()`, `todo!()` in shipped paths
+- Ellipsis-only function bodies (`...` as sole implementation)
+- `TODO: implement`, `FIXME`, placeholder returns (`return null` / `Ok(())` with no logic)
+- Mock-only tests that never assert behavior
+- Skipped tests without documented skip reason in checklist
+
+## Required
+
+- Every AC from linked requirements has a test or verifiable evidence
+- Blind Judge (`subagent_type=review`) returns `APPROVED` only at `code_grade: 10`
+- `validate_sf_checklist.py --wo <n>` exit 0
+- `validate_code_quality_gate.py --min-grade 10 --wo <n>` exit 0
+- Full checklist template (never abbreviated 5-line summary)
+
+## Hard Rules (Structural)
+
+Where WO touches agent rights, PHI, or financial actions:
+
+1. **Two-of-three rights** — holding all three must be impossible, not discouraged
+2. **Encrypt-before-access** — no agent path to raw PHI
+3. **No autonomous financial action** — human commit required for trading/fund/token moves
+
+## Loop
+
+Writer → Judge → refine until 10. No iteration cap. Overseer perfection pass before gates.

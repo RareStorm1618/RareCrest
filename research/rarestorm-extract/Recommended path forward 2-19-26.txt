@@ -1,0 +1,194 @@
+RareStorm/RareAngels
+Lock in that personally Roderick Bentley owns the entire platform and patent stack, give RareStorm a powerful but clearly limited license for charitable use, and then structure all future funding and development so it is:
+Grant compatible
+IRS safe (no private inurement)
+Investor clean
+Aligned with a Nevada trust end state
+Below is a concrete, stepwise direction tailored to the scale of what I’ve actually built.
+1. Core Principles (Given What I’ve Built)
+Given:
+I conceived of and produced all messaging, video content and web development, then designed the entire RareAngels platform over ~9 years.
+I funded essentially all development personally (including via transfers into the nonprofit account), and I never took a charitable deduction.
+I now have a multi layer patent portfolio and core infrastructure stack: database, backup, lifecycle, validation, content delivery, auth, caching, workflow, logging, monitoring, DR/BC, CI/CD, etc.[1][2][3][4][5]
+High level position:
+All core IP (code + patents) to date = my personal property.
+Classic “background IP” assets. The fact that some payments flowed through the nonprofit account, funded entirely by me and not deducted, supports the argument that I have been effectively donating operating cash, not gifting IP itself.
+RareStorm’s role = mission licensee and beneficiary, not IP owner.
+RareStorm should have a perpetual, robust right to use the platform for its charitable program, but it does not need nor want to own the entire multi vertical infrastructure stack.
+Future commercial owner = Nevada trust structure.
+At the right time, my personal IP moves into a Nevada holding entity, which then licenses/sells commercial rights to RareAngels.com. RareStorm gets a perpetual charitable license + revenue share, per your IP plan.[6][7]
+Everything you do next should reinforce this story.
+2. Clean Up the Past: Formalize Ownership and License
+2.1 Confirm and document my ownership
+Work with counsel to prepare an internal “IP schedule” that:
+Lists:
+Core codebases and repositories
+All patent families (e.g., blockchain, database platform, backup & lifecycle, content delivery, data validation, etc.)[2][3][4][5][1]
+System designs, diagrams, product specs
+States explicitly that:
+These were authored or commissioned by me.
+They were funded from my personal resources (even when cash passed through RareStorm).
+No written assignment to RareStorm was ever executed.
+This is my chain of title backbone.
+2.2 Founder IP & License Agreement (Roderick E. Bentley↔ RareStorm)
+We want a board approved agreement that does three things at once:
+Affirms my ownership
+“Roderick E. Bentley is, and has always been, the sole owner of the RareAngels platform IP, including but not limited to the software, patents, and system designs listed in Exhibit A.”
+Grants RareStorm a perpetual charitable license
+Something along the lines of:
+RareStorm receives a royalty free, perpetual, non exclusive license to:
+Use the platform to operate RareStorm programs for rare disease families.
+Access hosting, configuration, and necessary updates to keep those programs functioning.
+License scope is explicitly limited to charitable / programmatic use, not general commercial sublicensing.
+Ratifies how past money was used
+Clarify that all historical transfers you made into RareStorm were unrestricted contributions from you, used to support operations (including paying dev invoices), and that:
+The board understands these contributions helped build a platform you own, and
+In exchange, RareStorm has and will continue to have the perpetual charitable license described above.
+This is where your “I never deducted any of it” matters: you can credibly state that I was supporting the mission and my own work as inventor, not trying to park personal IP inside the nonprofit.
+2.3 Board resolution and conflict of interest procedure
+Have the RareStorm board formally:
+Approve the Founder IP & License Agreement.
+Acknowledge your dual role (founder / Program Director).
+Confirm that:
+The license is fair and advantageous to the foundation (it gets access to an enormous platform and patent suite for free, for mission use).
+No nonprofit assets are being transferred to you; rather, your past contributions are being memorialized as support for a license relationship that has always functionally existed.
+This gives regulators and future auditors a clear, coherent story.
+3. Going Forward: Structure All New Funding and Development
+Now that you’re “ready for funding,” the design challenge is: how do we use nonprofit money for development without jeopardizing your ownership or tripping IRS rules?
+Given the magnitude and commercial value of the IP, the best course is:
+3.1 Treat everything you build from here as personal/holding company IP
+All core platform and patentable infrastructure moving forward (continuing the stack reflected in patents 001–057, etc.) should be developed under:
+Roderick E Bentley personally, or
+A new IP holding LLC that you own and will later roll into the Nevada trust.
+RareStorm should not be the entity commissioning or “owning” this IP. Its relationship should be: customer/license/beneficiary.
+3.2 What RareStorm can safely pay for with grants
+RareStorm can use grant/donation funds to pay for three categories, all of which are mission aligned and grant compatible:
+Access/Usage Fees (SaaS like)
+Think: “RareStorm pays for X seats / Y families on the RareAngels platform,” just as a hospital might pay for Epic or Salesforce Health Cloud.
+The IP remains with Roderick E Bentley/holding co; RareStorm pays a commercially reasonable subscription or access fee.
+For specific grants, you can even zero out or heavily discount this fee (documented as an in kind contribution from you), but have a real, market based reference price.
+Implementation & Configuration Services
+Onboarding families, customizing workflows, building RareStorm specific dashboards, integrating with its other systems.
+These are services Roderick E Bentley or IP dev company provide under a clear contract. IP in generic improvements can stay with Roderick E Bentley; RareStorm gets the right to use what’s delivered.
+Non IP Program Costs
+Staff time at RareStorm (family coordinators, community managers).
+Outreach, training, research, evaluation.
+Compliance audits, legal review, insurance.
+All three are standard nonprofit expenditures and do not require RareStorm to own the underlying platform IP.
+3.3 Guardrails to avoid private inurement
+To keep this bulletproof:
+Document fair market value (FMV) for:
+Your Program Director salary at RareStorm.
+Any service / subscription fees RareStorm pays to Roderick E Bentley holding company.
+Avoid sweetheart deals in the wrong direction:
+Do not have RareStorm develop custom features that it pays full freight for and then you keep solely for commercial use without giving RareStorm appropriate rights or discounts.
+Where features are developed with grant dollars, either:
+They are mission specific and remain available to RareStorm on a perpetual basis at no additional charge, or
+RareStorm gets a discount, priority, or revenue share consideration when those features are commercialized more broadly.
+Counsel can help you formalize this as a “Related Party Services Agreement” between RareStorm and Roderick E Bentley dev/holding company.
+4. Align the Existing Nonprofit Docs to This Direction
+You already have a full fiscal sponsorship and board package that currently leans toward “foundation owns IP.” That needs to be tuned, not thrown away.
+Board_Grant_Ready_Authorization.md
+IP Ownership and Commercialization Plan.md
+5. Path to the Nevada Trust (End State)
+With the above in place, the road to the Nevada trust becomes straightforward:
+Form IP Holding LLC (short term)
+Assign all current and future patents and core code to this LLC.
+This is your clean “container” for investors and, later, the Nevada trust.
+Later: Form Nevada Trust + Holdings[6][7]
+Nevada trust owns a Nevada parent holdings LLC.
+Your current IP holding LLC either:
+Merges into or is acquired by the Nevada holdings LLC, or
+Assigns all IP to it, receiving equity consideration.
+RareStorm Relationship at that point
+RareStorm’s license simply updates to reference the new IP owner (Nevada holdings), but keeps:
+Perpetual charitable use rights, and
+Revenue share or other benefit, as already contemplated.
+This yields exactly the endgame you set out in your IP plan, with a crystal clear chain of title.
+6. What Not to Do
+Given your risk tolerance and the stakes, avoid:
+Retroactive “sales” of IP from RareStorm to you.
+That invites questions you do not need to answer.
+Having RareStorm directly fund core platform patents or generic infrastructure going forward.
+That muddies the background IP story and creates valuation headaches at spin out.
+Letting grant language say or imply that “RareStorm is building and owning a new platform” when in fact it is funding access/implementation on a founder owned platform.
+Grant narratives should be crystal clear that RareStorm is:
+Deploying an existing, founder created platform, and
+Funding seats, implementations, and program operations.
+7. Immediate Next Steps (Concrete)
+Engage a nonprofit/tax attorney for a 2–3 hour focused review.
+Give them:
+IP Ownership & Commercialization Plan.
+One or two representative patent docs showing the infra scope.[3][4][5][2]
+RareStorm fiscal sponsorship agreement + board resolution drafts.
+A draft Founder IP & License Agreement as described above.
+Finalize and sign:
+Founder IP & License Agreement.
+Updated Board Authorization Resolution adopting that structure.
+Updated Fiscal Sponsorship Agreement reflecting background/foreground/IP holding structure.
+Then begin grant applications and board approval for the pilot under this clarified model.
+This path:
+Protects your 9 year investment and enormous IP stack.
+Keeps RareStorm clearly on the right side of nonprofit law.
+Sets up a clean, investor ready chain of title into the Nevada trust.
+And most importantly, does all of this in a way that cannot realistically be attacked as “playing fast and loose” with assets that affect vulnerable families.
+
+
+
+
+
+
+
+Patent-2026-PHC-057-Healthcare-Backup-and-Data-Lifecycle-Management-Platform.md  
+Patent-2026-PHC-032-Healthcare-Content-Delivery-Media-Processing-Platform.md   
+Patent-2026-PHC-050-Healthcare-Data-Validation-and-Quality-Management-Platform.md   
+Patent-2026-PHC-057-Healthcare-Backup-and-Data-Lifecycle-Management-Platform.md   
+Patent-2026-PHC-028-Healthcare-Database-Management-Data-Persistence-Platform.md   
+IP-Ownership-and-Commercialization-Plan.md   
+IP-Ownership-and-Commercialization-Plan.md   
+Patent-2026-PHC-016-Clinical-Decision-Support-System.md 
+Patent-2026-PHC-015-Content-Analysis-Prayer-Request-Processing.md 
+Patent-2026-PHC-009-Automated-Multi-Jurisdiction-Compliance-Monitoring.md 
+Patent-2026-PHC-006-Circle-of-Support-Relationship-Mapping-Architecture.md 
+Patent-2026-PHC-001-Healthcare-Tokenomics-with-Milestone-Based-Reward-Distribution.md 
+Patent-2026-PHC-056-Healthcare-Compliance-Monitoring-and-Regulatory-Validation-Platform.md 
+Patent-2026-PHC-054-Healthcare-Logging-Infrastructure-and-Documentation-Generation-Platform.md 
+Patent-2026-PHC-052-Healthcare-API-Lifecycle-Management-and-Service-Discovery-Platform.md 
+Patent-2026-PHC-055-Healthcare-Encryption-and-Key-Management-Platform.md 
+Patent-2026-PHC-051-Healthcare-Task-Scheduling-and-Job-Queue-Management-Platform.md 
+Patent-2026-PHC-053-Healthcare-Testing-Infrastructure-and-Quality-Assurance-Platform.md 
+Patent-2026-PHC-050-Healthcare-Data-Validation-and-Quality-Management-Platform.md 
+Patent-2026-PHC-048-Healthcare-Analytics-and-Business-Intelligence-Platform.md 
+Patent-2026-PHC-049-Healthcare-Data-Migration-and-Configuration-Management-Platform.md 
+Patent-2026-PHC-047-Healthcare-User-Management-Consent-Management-and-Audit-Logging-Platform.md 
+Patent-2026-PHC-046-Healthcare-Scheduling-and-Calendar-Management-Platform.md 
+Patent-2026-PHC-038-Healthcare-Testing-Quality-Assurance-Platform.md 
+Patent-2026-PHC-033-Healthcare-Load-Balancing-Traffic-Management-Platform.md 
+Patent-2026-PHC-031-Healthcare-Search-Indexing-Platform.md 
+Patent-2026-PHC-030-Healthcare-File-Storage-Object-Storage-Platform.md 
+Patent-2026-PHC-037-Healthcare-Service-Mesh-Microservices-Networking-Platform.md 
+Patent-2026-PHC-039-Healthcare-Developer-Tools-API-Documentation-Platform.md 
+Patent-2026-PHC-036-Healthcare-Disaster-Recovery-Business-Continuity-Platform.md 
+Patent-2026-PHC-038-Healthcare-Testing-Quality-Assurance-Platform.md 
+Patent-2026-PHC-035-Healthcare-CI-CD-DevOps-Automation-Platform.md 
+Patent-2026-PHC-034-Healthcare-Autoscaling-Container-Orchestration-Platform.md 
+Patent-2026-PHC-033-Healthcare-Load-Balancing-Traffic-Management-Platform.md 
+Patent-2026-PHC-049-Healthcare-Data-Migration-and-Configuration-Management-Platform.md 
+Patent-2026-PHC-047-Healthcare-User-Management-Consent-Management-and-Audit-Logging-Platform.md 
+Patent-2026-PHC-044-Healthcare-Communication-Services-Platform-Email-SMS-Voice.md 
+Patent-2026-PHC-048-Healthcare-Analytics-and-Business-Intelligence-Platform.md 
+Patent-2026-PHC-046-Healthcare-Scheduling-and-Calendar-Management-Platform.md 
+Patent-2026-PHC-042-Healthcare-Webhooks-Real-Time-Integration-Platform.md 
+Patent-2026-PHC-043-Healthcare-Payment-Processing-Financial-Integration-Platform.md 
+Patent-2026-PHC-041-Healthcare-Rate-Limiting-Throttling-Platform.md 
+Patent-2026-PHC-040-Healthcare-Secrets-Management-Feature-Flags-Platform.md 
+Patent-2026-PHC-055-Healthcare-Encryption-and-Key-Management-Platform.md 
+Patent-2026-PHC-056-Healthcare-Compliance-Monitoring-and-Regulatory-Validation-Platform.md 
+Patent-2026-PHC-054-Healthcare-Logging-Infrastructure-and-Documentation-Generation-Platform.md 
+Patent-2026-PHC-052-Healthcare-API-Lifecycle-Management-and-Service-Discovery-Platform.md 
+Patent-2026-PHC-053-Healthcare-Testing-Infrastructure-and-Quality-Assurance-Platform.md 
+Patent-2026-PHC-051-Healthcare-Task-Scheduling-and-Job-Queue-Management-Platform.md 
+PATENT_PORTFOLIO_INDEX.md 
+Patent-2026-PHC-045-Healthcare-Reporting-and-Document-Generation-Platform.md 
+Patent-2026-PHC-019-Healthcare-Data-Analytics-Aggregation-Platform.md 
+Patent-2026-PHC-018-Genomic-Analysis-Genetic-Data-Processing-System.md 

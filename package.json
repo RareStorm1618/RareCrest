@@ -1,0 +1,29 @@
+{
+  "name": "rarecrest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RareCrest holding operating system — director-facing governance, diagnostics, and portfolio management",
+  "packageManager": "pnpm@10.26.1",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "pnpm --filter @rarecrest/db migrate",
+    "db:seed": "pnpm --filter @rarecrest/db seed",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "rust:build": "cargo build --workspace",
+    "rust:test": "cargo test --workspace",
+    "rust:lint": "cargo clippy --workspace -- -D warnings"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  }
+}
