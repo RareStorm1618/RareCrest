@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseClient } from "./client.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,6 @@ export async function runMigrations(db: DatabaseClient): Promise<string[]> {
       }
       continue;
     }
-
     await db.query("BEGIN");
     try {
       await db.query(sql);
@@ -58,9 +57,10 @@ export async function runMigrations(db: DatabaseClient): Promise<string[]> {
 }
 
 async function main(): Promise<void> {
+  loadDotEnv();
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.error("DATABASE_URL required");
+    console.error("DATABASE_URL required (set env or add it to repo-root .env)");
     process.exit(1);
   }
   const db = new DatabaseClient({ connectionString: url });
@@ -69,7 +69,42 @@ async function main(): Promise<void> {
   await db.close();
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
+/** Load repo-root .env into process.env without overriding existing vars. */
+function loadDotEnv(): void {
+  const candidates = [
+    join(process.cwd(), ".env"),
+    join(process.cwd(), "..", "..", ".env"),
+    join(__dirname, "..", "..", "..", ".env"),
+  ];
+  for (const path of candidates) {
+    try {
+      const text = readFileSync(path, "utf-8");
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq <= 0) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1);
+        }
+        if (!(key in process.env)) process.env[key] = value;
+      }
+      return;
+    } catch {
+      // try next candidate
+    }
+  }
+}
+
+const isDirectRun =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);

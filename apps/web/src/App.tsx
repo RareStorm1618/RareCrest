@@ -11,6 +11,7 @@ import { DiagnosticsWorkspace } from "./components/DiagnosticsWorkspace.js";
 import { DesignStudioPage } from "./components/DesignStudioPage.js";
 import { MigrationWorkspacePage } from "./components/MigrationWorkspacePage.js";
 import { CompanionPage } from "./components/CompanionPage.js";
+import { WikiPage } from "./components/WikiPage.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 
 export function App() {
@@ -123,9 +124,19 @@ export function App() {
         />
       )}
 
+      {route.name === "wiki" && (
+        <WikiPage
+          entityId={route.entityId}
+          entityName={entityName ?? route.entityId}
+          vertical={selectedEntity?.vertical ?? "holding"}
+          apiBase={API_BASE}
+          headers={API_HEADERS}
+        />
+      )}
+
       <DualTrackView
         title="Director Surface Contract"
-        narrative="Client renders server-owned portfolio, diagnostics, design, migration, and companion state. Streaming companion and portfolio briefs never grant deployment authority."
+        narrative="Client renders server-owned portfolio, diagnostics, design, migration, companion, and wiki state. Streaming companion and portfolio briefs never grant deployment authority."
         schemaPayload={{
           authority: "none",
           route: route.name,
@@ -134,6 +145,7 @@ export function App() {
             "portfolio-brief",
             "command-palette",
             "streaming-companion",
+            "wiki-companion",
             "diagnostics",
             "design-studio",
             "migration-workspace",

@@ -25,7 +25,7 @@ GRANT CONNECT ON DATABASE rarecrest TO rarecrest_intelligence;
 
 -- Schema for application tables (WO-2 will expand)
 CREATE SCHEMA IF NOT EXISTS rarecrest;
-GRANT USAGE ON SCHEMA rarecrest TO rarecrest_api;
+GRANT USAGE, CREATE ON SCHEMA rarecrest TO rarecrest_api;
 GRANT USAGE ON SCHEMA rarecrest TO rarecrest_governance;
 GRANT USAGE ON SCHEMA rarecrest TO rarecrest_intelligence;
 
@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS rarecrest.schema_migrations (
 GRANT SELECT, INSERT ON rarecrest.schema_migrations TO rarecrest_api;
 GRANT SELECT, INSERT ON rarecrest.schema_migrations TO rarecrest_governance;
 GRANT SELECT, INSERT ON rarecrest.schema_migrations TO rarecrest_intelligence;
+
+-- Allow API role to apply migrations and own app tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA rarecrest
+  GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES TO rarecrest_api;
+ALTER DEFAULT PRIVILEGES IN SCHEMA rarecrest
+  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO rarecrest_api;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA rarecrest TO rarecrest_api;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA rarecrest TO rarecrest_api;
 
 -- Revoke public access (internal-only)
 REVOKE ALL ON SCHEMA public FROM PUBLIC;

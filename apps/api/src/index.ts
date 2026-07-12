@@ -37,6 +37,7 @@ import { registerDesignStudioRoutes } from "./routes/design-studio-routes.js";
 import { registerKillSwitchRoutes } from "./routes/kill-switch-routes.js";
 import { registerPhiVaultRoutes } from "./routes/phi-vault-routes.js";
 import { registerAuthRevocationRoutes } from "./routes/auth-revocation-routes.js";
+import { registerWikiRoutes } from "./routes/wiki-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import { loadSecret } from "./secrets.js";
@@ -111,6 +112,7 @@ export async function buildApp() {
   registerKillSwitchRoutes(app, db, governance);
   registerPhiVaultRoutes(app, db);
   registerAuthRevocationRoutes(app, db);
+  registerWikiRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

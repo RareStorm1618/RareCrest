@@ -3,7 +3,8 @@ export type AppRoute =
   | { name: "diagnostics"; entityId: string }
   | { name: "design"; entityId: string }
   | { name: "migration"; entityId: string }
-  | { name: "companion"; entityId: string };
+  | { name: "companion"; entityId: string }
+  | { name: "wiki"; entityId: string };
 
 export function parseHash(hash: string): AppRoute {
   const path = hash.replace(/^#\/?/, "").replace(/\/$/, "");
@@ -16,6 +17,7 @@ export function parseHash(hash: string): AppRoute {
     if (section === "design") return { name: "design", entityId };
     if (section === "migration") return { name: "migration", entityId };
     if (section === "companion") return { name: "companion", entityId };
+    if (section === "wiki") return { name: "wiki", entityId };
     return { name: "diagnostics", entityId };
   }
 
@@ -34,6 +36,8 @@ export function routeToHash(route: AppRoute): string {
       return `#/entities/${route.entityId}/migration`;
     case "companion":
       return `#/entities/${route.entityId}/companion`;
+    case "wiki":
+      return `#/entities/${route.entityId}/wiki`;
   }
 }
 

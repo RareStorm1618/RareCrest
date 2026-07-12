@@ -19,6 +19,18 @@ This document is the honest map of what RareCrest **does** enforce today and wha
 | Kill switch | Durable Postgres + dual-control trigger in strict mode. |
 | Internal RPC | `INTERNAL_SERVICE_TOKEN` on governance/intelligence `/rpc/*`. |
 | Command queue | Vertical-scoped unless verified director. |
+| Federated Canon Wiki | Namespaces isolate verticals; bridges are holding-only redacted projections. Care verticals PHI-blind (refs only). Promote-to-canon dual-control for holding + financial charters. |
+
+## Federated Canon Wiki
+
+| Rule | Behavior |
+| --- | --- |
+| System of record | RareCrest wiki tables + APIs (`/api/v1/wiki/*`). Obsidian is an optional director satellite. |
+| Vertical isolation | `vertical/{key}/wiki` readable/writable only by that vertical (or verified director). |
+| Holding bridges | `bridges/*` and `holding/canon` require director or holding vertical. |
+| PHI-blind | HealKids / RareAngels compile paths redact PHI-like patterns; Obsidian sync excludes `phi_ref` pages. |
+| Promote ceremony | Agents write drafts; humans promote. Holding + financial charters require two distinct approvers. |
+| Multi-writer | Advisory page locks (`lock_holder` / `lock_until`) on ingest and via `/api/v1/wiki/lock`. |
 
 ## What must remain human-owned forever
 
@@ -47,7 +59,7 @@ This document is the honest map of what RareCrest **does** enforce today and wha
 - [ ] Real IdP JWKS configured; tokens include `sub`, `vertical`, `role`, `jti`
 - [ ] `INTERNAL_SERVICE_TOKEN` from secrets manager on API + governance + intelligence
 - [ ] `PHI_KMS_KEK` or cloud KMS endpoint from secrets manager (`*_FILE` supported)
-- [ ] `pnpm db:migrate` through `018_kms_revocation_financial.sql`
+- [ ] `pnpm db:migrate` through `019_federated_wiki.sql`
 - [ ] Register encryption layer per care entity
 - [ ] Dual-control kill-switch drill (two distinct humans)
 - [ ] Dual-control financial commit drill (two distinct approvers)

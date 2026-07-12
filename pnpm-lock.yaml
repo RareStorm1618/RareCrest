@@ -77,9 +77,15 @@ importers:
       '@rarecrest/skill-companion':
         specifier: workspace:*
         version: link:../../packages/skill-companion
+      '@rarecrest/vector-store':
+        specifier: workspace:*
+        version: link:../../packages/vector-store
       '@rarecrest/vendor-shortcut':
         specifier: workspace:*
         version: link:../../packages/vendor-shortcut
+      '@rarecrest/wiki':
+        specifier: workspace:*
+        version: link:../../packages/wiki
       fastify:
         specifier: ^5.4.0
         version: 5.10.0
@@ -433,6 +439,22 @@ importers:
 
   packages/vendor-shortcut:
     devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
+  packages/wiki:
+    dependencies:
+      '@rarecrest/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

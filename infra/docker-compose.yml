@@ -10,7 +10,8 @@ services:
       # Enable WAL archiving for PITR simulation
       POSTGRES_INITDB_ARGS: "--data-checksums"
     ports:
-      - "5432:5432"
+      # Host 55432 avoids clash with other local stacks (e.g. healkids on 5432)
+      - "55432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro

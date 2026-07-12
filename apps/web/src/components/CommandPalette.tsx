@@ -49,7 +49,7 @@ export function CommandPalette({ open, onClose, rollup, currentRoute }: CommandP
 
     const entityId = currentRoute.name === "portfolio" ? null : currentRoute.entityId;
     if (entityId) {
-      for (const section of ["diagnostics", "design", "migration", "companion"] as const) {
+      for (const section of ["diagnostics", "design", "migration", "companion", "wiki"] as const) {
         items.push({
           id: `section-${section}`,
           label: `Open ${section}`,

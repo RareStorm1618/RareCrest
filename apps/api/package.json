@@ -32,7 +32,9 @@
     "@rarecrest/portfolio": "workspace:*",
     "@rarecrest/runtime-control": "workspace:*",
     "@rarecrest/skill-companion": "workspace:*",
+    "@rarecrest/vector-store": "workspace:*",
     "@rarecrest/vendor-shortcut": "workspace:*",
+    "@rarecrest/wiki": "workspace:*",
     "fastify": "^5.4.0",
     "jose": "^6.2.3",
     "zod": "^3.25.67"

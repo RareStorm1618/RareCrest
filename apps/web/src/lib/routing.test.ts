@@ -15,6 +15,7 @@ describe("web routing", () => {
     expect(parseHash("#/entities/abc/design")).toEqual({ name: "design", entityId: "abc" });
     expect(parseHash("#/entities/abc/migration")).toEqual({ name: "migration", entityId: "abc" });
     expect(parseHash("#/entities/abc/companion")).toEqual({ name: "companion", entityId: "abc" });
+    expect(parseHash("#/entities/abc/wiki")).toEqual({ name: "wiki", entityId: "abc" });
   });
 
   it("round-trips hashes", () => {

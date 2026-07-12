@@ -51,6 +51,14 @@ export function DirectorNav({ route, entityId, entityName }: DirectorNavProps) {
       >
         Companion
       </button>
+      <button
+        type="button"
+        disabled={!hasEntity}
+        className={route.name === "wiki" ? "active" : undefined}
+        onClick={() => entityId && navigate({ name: "wiki", entityId })}
+      >
+        Wiki
+      </button>
       {entityName && (
         <span className="nav-entity" data-testid="nav-entity-context">
           Entity: {entityName}
