@@ -54,6 +54,7 @@ describe("runNightShift", () => {
     expect(result.sealResults).toHaveLength(2);
     expect(result.sealResults.every((r) => r.status === "executed")).toBe(true);
     expect(typeof result.ranAt).toBe("string");
+    expect(result).toHaveProperty("provenanceRootId");
     expect(markStale).toHaveBeenCalledWith(60);
   });
 

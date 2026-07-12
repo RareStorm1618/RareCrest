@@ -1,6 +1,7 @@
 import type { DatabaseClient } from "@rarecrest/db";
 import { ParliamentService } from "../services/parliament.js";
 import { AsyncJobService } from "../services/async-jobs.js";
+import { anchorProvenanceRoot } from "../services/provenance.js";
 
 export interface NightShiftDeps {
   parliament?: ParliamentService;
@@ -21,6 +22,7 @@ export interface NightShiftResult {
   sealsFailed: number;
   sealResults: NightShiftSealResult[];
   staleJobsMarked: number;
+  provenanceRootId: string | null;
   ranAt: string;
 }
 
@@ -59,11 +61,21 @@ export async function runNightShift(
 
   const staleJobsMarked = await asyncJobs.markStale(staleAfterMinutes);
 
+  let provenanceRootId: string | null = null;
+  try {
+    const root = await anchorProvenanceRoot(db, { periodHours: 24 });
+    provenanceRootId = root.id;
+  } catch {
+    // Anchoring is best-effort in night-shift so seal execution still completes if
+    // provenance tables are mid-migration; director can POST /provenance/root/anchor.
+  }
+
   return {
     sealsExecuted: sealResults.filter((r) => r.status === "executed").length,
     sealsFailed: sealResults.filter((r) => r.status === "failed").length,
     sealResults,
     staleJobsMarked,
+    provenanceRootId,
     ranAt: new Date().toISOString(),
   };
 }

@@ -108,6 +108,9 @@ describe("POST /api/v1/federation/ingress/:vertical", () => {
           const row = store.get(key);
           return { rows: row ? [row] : [] };
         }
+        if (sql.includes("SELECT content_hash FROM rarecrest.holding_metric_events")) {
+          return { rows: [] };
+        }
         if (sql.includes("INSERT INTO rarecrest.holding_metric_events")) {
           const row = {
             id: `metric-${metricRows.length + 1}`,
@@ -119,6 +122,8 @@ describe("POST /api/v1/federation/ingress/:vertical", () => {
             source_ref: params?.[5],
             recorded_at: new Date().toISOString(),
             actor_id: params?.[6],
+            prev_hash: params?.[7] ?? null,
+            content_hash: params?.[8] ?? null,
           };
           metricRows.push(row);
           return { rows: [row] };

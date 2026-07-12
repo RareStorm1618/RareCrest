@@ -30,7 +30,7 @@ export interface PortfolioOversightInput {
 }
 
 export interface ExportPack {
-  kind?: "oversight" | "assessment_summary";
+  kind?: "oversight" | "assessment_summary" | "board_pack";
   scope: "entity" | "portfolio";
   format: "pdf" | "markdown";
   sections: Array<{ title: string; body: string }>;
@@ -82,7 +82,12 @@ export function assemblePortfolioOversightPack(input: PortfolioOversightInput, f
 }
 
 export function renderMarkdown(pack: ExportPack): string {
-  const title = pack.kind === "assessment_summary" ? "Assessment Summary" : "Oversight Pack";
+  const title =
+    pack.kind === "assessment_summary"
+      ? "Assessment Summary"
+      : pack.kind === "board_pack"
+        ? "Board Pack"
+        : "Oversight Pack";
   return `# ${title} (${pack.scope})\n\n${pack.sections.map((s) => `## ${s.title}\n${s.body}`).join("\n\n")}\n`;
 }
 
@@ -120,3 +125,20 @@ export function assembleAssessmentSummary(input: AssessmentSummaryInput): Export
     contentHash: createHash("sha256").update(content).digest("hex"),
   };
 }
+
+export {
+  assembleBoardPack,
+  type BoardPackInput,
+  type BoardPackResult,
+} from "./board-pack.js";
+
+export {
+  buildMerkleRoot,
+  computeMetricContentHash,
+  computeTraceContentHash,
+  verifyMetricChain,
+  verifyTraceChain,
+  type MetricChainRow,
+  type TraceChainRow,
+  type TraceChainVerifyResult,
+} from "./provenance.js";

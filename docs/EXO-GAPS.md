@@ -36,17 +36,15 @@ on night-shift / ops).
 
 ## Provenance
 
-The decision-trace hash chain (`rarecrest.decision_traces.content_hash`/`prev_hash`,
-`computeTraceContentHash`) is tamper-evident *per entity*, verifiable only by re-walking the
-chain against the same Postgres instance. Gaps: no cross-entity or cross-vertical merkle root,
-no periodic external anchor (e.g., publishing a root hash somewhere outside RareCrest's own
-database so a compromised DB admin couldn't quietly rewrite history), and no verifiable
-provenance for the *content* of a wiki page beyond `wiki_raw_sources.content_hash` — there is no
-signed attestation of *who* (which human, which agent, which officer passport) approved a
-specific piece of canon beyond the promote ceremony's own audit row. Holding metric events
-(`rarecrest.holding_metric_events`, EXO Wave B) are similarly append-only but unchained — no
-`prev_hash`/`content_hash` linkage yet, so a North Star number is durable but not (yet)
-tamper-evident the way a decision trace is.
+**Shipped:** per-entity decision-trace verify API; holding-metric hash chain
+(`prev_hash`/`content_hash`); periodic `provenance_roots` merkle anchors (night-shift
++ director POST); LP board pack export/preview. See `docs/PROVENANCE.md`.
+
+**Still gaps:** no public/external timestamping beyond optional `anchor_ref` (object
+store path); wiki page bodies still lack page-level content hashes (raw-source hash
+only); holding metric “supersede/correction” event type not yet modeled; board pack
+does not yet embed a cryptographic signature of the director’s seal key — content
+hash + storage is the attestation today.
 
 ## Other honest gaps from Wave B + C
 

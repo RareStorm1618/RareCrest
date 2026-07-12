@@ -163,6 +163,12 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [northStar, setNorthStar] = useState<NorthStarSummary | null>(null);
+  const [provenanceRoot, setProvenanceRoot] = useState<{
+    id: string;
+    merkleRoot: string;
+    createdAt: string;
+    leafCount: number;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -236,11 +242,46 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
     }
   }, [apiBase, headers]);
 
+  const loadProvenance = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/v1/provenance/root/latest`, { headers });
+      if (!res.ok) {
+        setProvenanceRoot(null);
+        return;
+      }
+      setProvenanceRoot((await res.json()) as {
+        id: string;
+        merkleRoot: string;
+        createdAt: string;
+        leafCount: number;
+      });
+    } catch {
+      setProvenanceRoot(null);
+    }
+  }, [apiBase, headers]);
+
+  const generateBoardPack = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/v1/exports/board-pack`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ windowDays: 30 }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { packId: string; contentHash: string; downloadUrl?: string };
+      window.alert(`Board pack ready\npackId=${data.packId}\nhash=${data.contentHash.slice(0, 16)}…`);
+      await loadProvenance();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Board pack failed");
+    }
+  };
+
   useEffect(() => {
     load();
     loadOpsStatus();
     loadNorthStar();
-  }, [load, loadOpsStatus, loadNorthStar]);
+    loadProvenance();
+  }, [load, loadOpsStatus, loadNorthStar, loadProvenance]);
 
   const rememberIfKnown = useCallback(
     (entityId: string | null) => {
@@ -348,6 +389,24 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
           </div>
         </div>
       )}
+
+      <div className="command-section-block" data-testid="provenance-card">
+        <h3>Provenance & board pack</h3>
+        {provenanceRoot ? (
+          <p className="wiki-empty">
+            Latest root {provenanceRoot.id.slice(0, 8)}… · {provenanceRoot.leafCount} leaves ·{" "}
+            {new Date(provenanceRoot.createdAt).toLocaleString()}
+            <br />
+            <code>{provenanceRoot.merkleRoot.slice(0, 24)}…</code>
+          </p>
+        ) : (
+          <p className="wiki-empty">No provenance root anchored yet (night-shift or POST /provenance/root/anchor).</p>
+        )}
+        <button type="button" className="command-card" onClick={() => void generateBoardPack()}>
+          <span className="command-card-label">Generate LP board pack</span>
+          <small>North Star · seals · kill switches · federation · provenance</small>
+        </button>
+      </div>
 
       {governanceQueue && (
         <div className="command-section-block" data-testid="governance-queue">

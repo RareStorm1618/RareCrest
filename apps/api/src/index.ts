@@ -47,6 +47,7 @@ import { registerParliamentRoutes } from "./routes/parliament-routes.js";
 import { registerDoctrineRoutes } from "./routes/doctrine-routes.js";
 import { registerHoldingMetricsRoutes } from "./routes/holding-metrics-routes.js";
 import { registerFederationRoutes } from "./routes/federation-routes.js";
+import { registerProvenanceRoutes } from "./routes/provenance-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import {
@@ -160,6 +161,7 @@ export async function buildApp() {
   registerDoctrineRoutes(app, db);
   registerHoldingMetricsRoutes(app, db);
   registerFederationRoutes(app, db);
+  registerProvenanceRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

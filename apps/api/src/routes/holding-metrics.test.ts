@@ -50,11 +50,13 @@ function mockDb() {
   const db = {
     query: vi.fn(async (sql: string, params?: unknown[]) => {
       if (sql.includes("INSERT INTO rarecrest.holding_metric_events")) {
-        const [vertical, entityId, metricKey, value, unit, sourceRef, actorId] = params as [
+        const [vertical, entityId, metricKey, value, unit, sourceRef, actorId, prevHash, contentHash] = params as [
           string,
           string | null,
           string,
           number,
+          string,
+          string | null,
           string,
           string | null,
           string,
@@ -69,9 +71,14 @@ function mockDb() {
           source_ref: sourceRef,
           recorded_at: new Date("2026-07-12T00:00:00Z"),
           actor_id: actorId,
+          prev_hash: prevHash,
+          content_hash: contentHash,
         };
         inserted.push(row);
         return { rows: [row] };
+      }
+      if (sql.includes("SELECT content_hash FROM rarecrest.holding_metric_events")) {
+        return { rows: [] };
       }
       if (sql.includes("FROM rarecrest.holding_metric_events")) {
         return { rows: aggregateRows };
