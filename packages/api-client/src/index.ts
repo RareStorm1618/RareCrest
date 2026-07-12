@@ -73,8 +73,19 @@ export class RareCrestApiClient {
     });
   }
 
-  async getEntityDetail(id: string): Promise<EntityState & { attentionFlags: unknown[]; relationships: unknown[] }> {
-    return this.request(`/api/v1/portfolio/entities/${id}`);
+  async skillCompanionComplete(input: {
+    entityId: string;
+    vertical: string;
+    tenancyKey?: string;
+    question: string;
+    context?: string[];
+    requestKind?: string;
+    entityContext?: Record<string, unknown> | null;
+  }): Promise<Record<string, unknown>> {
+    return this.request("/api/v1/skill-companion", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   }
 }
 

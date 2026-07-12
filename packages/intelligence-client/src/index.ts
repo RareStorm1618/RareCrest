@@ -45,6 +45,43 @@ export class IntelligenceClient {
     return this.post("/rpc/skill-companion/complete", input);
   }
 
+  async *skillCompanionStream(input: {
+    entityId: string;
+    vertical: string;
+    question: string;
+    context?: string[];
+    requestKind?: string;
+    entityContext?: Record<string, unknown> | null;
+  }): AsyncGenerator<{ event: string; data: Record<string, unknown> }> {
+    const response = await fetch(`${this.baseUrl}/rpc/skill-companion/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Intelligence stream failed: ${response.status}`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        const lines = part.split("\n");
+        const eventLine = lines.find((line) => line.startsWith("event:"));
+        const dataLine = lines.find((line) => line.startsWith("data:"));
+        if (!eventLine || !dataLine) continue;
+        const event = eventLine.slice(6).trim();
+        const data = JSON.parse(dataLine.slice(5).trim()) as Record<string, unknown>;
+        yield { event, data };
+      }
+    }
+  }
+
   async runEvaluation(input: {
     agentId: string;
     entityId: string;

@@ -82,6 +82,43 @@ export async function buildIntelligenceApp() {
     },
   );
 
+  app.post<{ Body: { entityId: string; vertical: string; question: string; context?: string[]; requestKind?: string; entityContext?: object | null } }>(
+    "/rpc/skill-companion/stream",
+    async (request, reply) => {
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      const writeEvent = (event: string, data: unknown) => {
+        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+      try {
+        const guard = companion.evaluateGuard(
+          (request.body.requestKind ?? "substantive") as never,
+          (request.body.entityContext ?? null) as never,
+        );
+        if (!guard.allowed) {
+          writeEvent("guard", guard);
+          writeEvent("done", { ok: false });
+          reply.raw.end();
+          return;
+        }
+        writeEvent("guard", guard);
+        for await (const chunk of companion.stream(request.body as never)) {
+          writeEvent("token", { text: chunk });
+        }
+        const complete = await companion.complete(request.body as never);
+        writeEvent("complete", complete);
+        writeEvent("done", { ok: true });
+      } catch (err) {
+        writeEvent("error", { message: err instanceof Error ? err.message : "stream failed" });
+      }
+      reply.raw.end();
+    },
+  );
+
   app.post<{ Body: { kind: string; entityContext: object | null } }>(
     "/rpc/framing-guard/evaluate",
     async (request, reply) => {
