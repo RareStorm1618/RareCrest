@@ -138,19 +138,7 @@ export function registerPhaseRoutes(
 
   // WO-32: MigrationRecommender — see migration-routes.ts (canonical)
 
-  // WO-33: TaskDecompositionMatrix
-  app.post("/api/v1/diagnostics/task-decomposition", async (request, reply) => {
-    const schema = z.object({ goal: z.string(), constraints: z.array(z.string()).default([]) });
-    const body = schema.parse(request.body);
-    return reply.send({
-      goal: body.goal,
-      tasks: [
-        { id: "t1", title: "Assess current state", dependsOn: [] },
-        { id: "t2", title: "Define target architecture", dependsOn: ["t1"] },
-        { id: "t3", title: "Plan migration steps", dependsOn: ["t2"] },
-      ],
-    });
-  });
+  // WO-33: TaskDecompositionMatrix — see task-decomposition-routes.ts (canonical)
 
   // WO-35: RegulatoryProfileService
   app.get("/api/v1/entities/:id/regulatory-profile", async (request, reply) => {

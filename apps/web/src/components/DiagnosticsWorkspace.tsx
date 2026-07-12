@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReadinessDimension } from "@rarecrest/diagnostics";
+import { TaskDecompositionPanel } from "./TaskDecompositionPanel.js";
 
 interface DiagnosticsWorkspaceProps {
   entityId: string;
@@ -271,6 +272,8 @@ export function DiagnosticsWorkspace({
           </div>
         )}
       </div>
+
+      <TaskDecompositionPanel entityId={entityId} apiBase={apiBase} headers={headers} />
 
       {error && <p role="alert" className="error">{error}</p>}
     </section>

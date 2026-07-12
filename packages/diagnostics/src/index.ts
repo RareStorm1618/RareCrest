@@ -172,3 +172,4 @@ export function isRetakeDue(completedAt: string | null): boolean {
 }
 
 export * from "./migration.js";
+export * from "./task-decomposition.js";
