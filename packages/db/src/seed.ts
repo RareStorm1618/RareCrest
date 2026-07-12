@@ -40,8 +40,8 @@ export async function seedPortfolio(db: DatabaseClient): Promise<void> {
   }
 
   await db.query(
-    `INSERT INTO rarecrest.attention_flags (entity_id, flag_type, severity, message, link_path)
-     VALUES ($1, 'kill_switch_overdue', 'high', 'Kill switch test overdue', $2)`,
+    `INSERT INTO rarecrest.attention_flags (entity_id, flag_type, signal_type, severity, message, link_path)
+     VALUES ($1, 'kill_switch_overdue', 'open_governance_gate', 'high', 'Kill switch test overdue', $2)`,
     [ids[3], `/portfolio/entities/${ids[3]}`],
   );
 

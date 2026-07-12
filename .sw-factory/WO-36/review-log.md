@@ -2,8 +2,8 @@
 
 # Review Log: WO-36
 
-**Work Order:** WO-36 — WO-36 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:42Z
+**Work Order:** WO-36 — Implement AttentionFlagService and entity relationships (API Server)
+**Initialized At (UTC):** 2026-07-12T00:53:26Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: apps/api/src/routes/phase-routes.ts, apps/api/src/index.ts
+Files reviewed: packages/portfolio/src/attention.ts, packages/portfolio/src/attention.test.ts, packages/db/migrations/006_attention_items.sql, apps/api/src/services/attention-flag.ts, apps/api/src/routes/attention-flag-routes.ts, apps/web/src/components/AttentionFlagsPanel.tsx

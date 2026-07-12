@@ -142,16 +142,7 @@ export function registerPhaseRoutes(
 
   // WO-35: RegulatoryProfileService — see regulatory-profile-routes.ts (canonical)
 
-  // WO-36: AttentionFlagService
-  app.get("/api/v1/entities/:id/attention-flags", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    return reply.send({
-      entityId: id,
-      flags: [
-        { type: "kill_switch_overdue", severity: "high", message: "Kill switch test overdue" },
-      ],
-    });
-  });
+  // WO-36: AttentionFlagService — see attention-flag-routes.ts (canonical)
 
   // WO-38: CrossSkillWorkflowRunner
   app.post("/api/v1/workflows/run", async (request, reply) => {

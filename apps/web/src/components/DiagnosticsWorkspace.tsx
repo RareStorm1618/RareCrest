@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ReadinessDimension } from "@rarecrest/diagnostics";
 import { TaskDecompositionPanel } from "./TaskDecompositionPanel.js";
 import { RegulatoryProfilePanel } from "./RegulatoryProfilePanel.js";
+import { AttentionFlagsPanel } from "./AttentionFlagsPanel.js";
 
 interface DiagnosticsWorkspaceProps {
   entityId: string;
@@ -152,6 +153,7 @@ export function DiagnosticsWorkspace({
       </header>
 
       <RegulatoryProfilePanel entityId={entityId} apiBase={apiBase} headers={headers} />
+      <AttentionFlagsPanel entityId={entityId} apiBase={apiBase} headers={headers} />
 
       <ol className="run-order">
         {state.runOrder.map((step) => (

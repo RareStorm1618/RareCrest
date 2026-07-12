@@ -38,6 +38,7 @@ interface EntityRow {
   updated_at: string;
   deleted_at: string | null;
   attention_flag_count?: string;
+  deployment_blocked?: boolean;
 }
 
 function stateSummary(row: EntityRow): string {
@@ -88,7 +89,11 @@ export class PortfolioService {
       `SELECT e.id, e.name, e.vertical, e.tenancy_key, e.entity_type, e.is_holding_entity,
               e.mode, e.band, e.regulatory_regimes, e.governance_status, e.deployment_locked,
               e.maturity_level, e.assessed_at, e.created_at, e.updated_at, e.deleted_at,
-              COUNT(af.id) FILTER (WHERE af.resolved_at IS NULL)::text AS attention_flag_count
+              COUNT(af.id) FILTER (WHERE af.resolved_at IS NULL)::text AS attention_flag_count,
+              BOOL_OR(
+                af.resolved_at IS NULL
+                AND COALESCE(af.signal_type, af.flag_type) IN ('hard_rule_exception', 'open_governance_gate')
+              ) AS deployment_blocked
        FROM rarecrest.entities e
        LEFT JOIN rarecrest.attention_flags af ON af.entity_id = e.id
        WHERE ${where}
@@ -122,6 +127,7 @@ export class PortfolioService {
         deploymentLocked: row.deployment_locked,
         maturityLevel: row.maturity_level,
         attentionFlagCount: flagCount,
+        clearForAgentDeployment: !(row.deployment_blocked ?? false) && row.governance_status !== "hard_rule_exception",
         stateSummary: stateSummary(row),
       };
     });

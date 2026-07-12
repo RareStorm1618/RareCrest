@@ -16,6 +16,7 @@ import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes.js";
 import { registerMigrationRoutes } from "./routes/migration-routes.js";
 import { registerTaskDecompositionRoutes } from "./routes/task-decomposition-routes.js";
 import { registerRegulatoryProfileRoutes } from "./routes/regulatory-profile-routes.js";
+import { registerAttentionFlagRoutes } from "./routes/attention-flag-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { z } from "zod";
 
@@ -62,6 +63,7 @@ export async function buildApp() {
   registerMigrationRoutes(app, db);
   registerTaskDecompositionRoutes(app, db);
   registerRegulatoryProfileRoutes(app, db);
+  registerAttentionFlagRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

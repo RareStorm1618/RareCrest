@@ -52,6 +52,7 @@ export function PortfolioStatusView({ rollup, loading, onSelectEntity }: Portfol
             <th>Governance</th>
             <th>Status</th>
             <th>Flags</th>
+            <th>Deploy</th>
           </tr>
         </thead>
         <tbody>
@@ -82,6 +83,7 @@ export function PortfolioStatusView({ rollup, loading, onSelectEntity }: Portfol
               <td>{entity.governanceStatus}</td>
               <td>{entity.stateSummary}</td>
               <td>{entity.attentionFlagCount > 0 ? entity.attentionFlagCount : "—"}</td>
+              <td>{entity.clearForAgentDeployment ? "clear" : <span className="deploy-blocked">blocked</span>}</td>
             </tr>
           ))}
         </tbody>

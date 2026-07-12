@@ -1,29 +1,18 @@
-<!--lint disable no-undefined-references strong-marker-->
-
 # Implementation Plan: WO-36
 
-**Work Order:** WO-36 — WO-36 RareCrest implementation
-**Created At (UTC):** 2026-07-11T23:54:42Z
+**Work Order:** WO-36 — Implement AttentionFlagService and entity relationships (API Server)
 
 ## Summary
 
-_1-3 sentences: what this work order delivers and the high-level approach._
+Production AttentionFlagService: shared AttentionItem signal set, open decisions with resolution clearing flags, conflict tracking, unverified-claim consumption from Legal & Compliance, entity relationships with constraints, and deployment-clearance in portfolio roll-up.
 
-## Code Reuse And Package Structure
+## Deliverables
 
-_List critical existing files/components/services/hooks/utilities/schemas/tests to reuse or import as dependencies. Note reuse/extract/follow-pattern decisions. Then list files/packages/directories intentionally created or modified by this plan, grouped by module or layer. Do not list incidental import-order, barrel export, formatting, generated-code, or mechanical follow-on edits._
+- `packages/portfolio/src/attention.ts` — domain logic + 5 tests
+- `packages/db/migrations/006_attention_items.sql` — open decisions, conflicts, unverified claims
+- `apps/api/src/services/attention-flag.ts` + `attention-flag-routes.ts`
+- `apps/web/src/components/AttentionFlagsPanel.tsx` + portfolio deploy-clearance column
 
-## Components And Flow
+## Evidence
 
-_Name Blueprint-defined components, supporting components, important interfaces/signatures, and call/data flow._
-
-## Steps
-
-_Ordered implementation steps. Each step should produce a reviewable, preferably compilable intermediate state. Note parallelizable steps (touch different files, no dependency)._
-
-1. **[title]** - _what to do, where_
-2. **[title]** - _what to do, where_
-
-## Testing
-
-_Automated and manual tests: suites, new/changed test files, scenarios, and commands. Not for requirements/blueprint conformance—that belongs in review._
+Validators exit 0; review-log APPROVED code_grade 10.

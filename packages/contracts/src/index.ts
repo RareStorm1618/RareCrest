@@ -122,6 +122,7 @@ export interface PortfolioEntitySummary {
   deploymentLocked: boolean;
   maturityLevel: number;
   attentionFlagCount: number;
+  clearForAgentDeployment: boolean;
   stateSummary: string;
 }
 

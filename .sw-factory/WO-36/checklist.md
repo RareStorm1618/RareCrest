@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-36
 
 **Work Order Number:** WO-36
-**Work Order Title:** WO-36 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:42Z
+**Work Order Title:** Implement AttentionFlagService and entity relationships (API Server)
+**Initialized At (UTC):** 2026-07-12T00:53:26Z
 
 ## Phase 1: Start / Context Gathering
 
