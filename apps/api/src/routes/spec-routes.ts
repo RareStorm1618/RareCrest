@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
 import type { GovernanceClient } from "@rarecrest/governance-client";
-import type { IntelligenceClient } from "@rarecrest/intelligence-client";
 import { mergeValidationWithHardRule, validateStructuredDocument } from "@rarecrest/dual-track";
 import type { AgentRight } from "@rarecrest/contracts";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
+import { entityEncryptionLayerPresent } from "./phi-vault-routes.js";
 
 const specBodySchema = z.object({
   entityId: z.string().uuid(),
@@ -16,13 +16,15 @@ const specBodySchema = z.object({
   requestedRights: z.array(z.enum(["sensitive_data", "code_execution", "external_comms"])).optional(),
   touchesPhi: z.boolean().default(false),
   touchesFinancial: z.boolean().default(false),
-  encryptionLayerPresent: z.boolean().default(false),
+  /** Ignored — encryption layer is derived server-side. */
+  encryptionLayerPresent: z.boolean().optional(),
 });
 
 async function validateSpec(
   body: z.infer<typeof specBodySchema>,
   vertical: string,
   governance: GovernanceClient,
+  encryptionLayerPresent: boolean,
 ) {
   const local = validateStructuredDocument({
     docType: body.docType,
@@ -37,7 +39,7 @@ async function validateSpec(
     requestedRights: body.requestedRights ?? [],
     touchesPhi: body.touchesPhi,
     touchesFinancial: body.touchesFinancial,
-    encryptionLayerPresent: body.encryptionLayerPresent,
+    encryptionLayerPresent,
   });
   return mergeValidationWithHardRule(local, verdict.allowed, verdict.reasons);
 }
@@ -47,8 +49,9 @@ export function registerSpecRoutes(app: FastifyInstance, db: DatabaseClient, gov
     try {
       const body = specBodySchema.parse(request.body);
       await assertEntityAccess(db, body.entityId, request.auth);
-      const result = await validateSpec(body, request.auth.vertical, governance);
-      return reply.send(result);
+      const encryptionLayerPresent = await entityEncryptionLayerPresent(db, body.entityId);
+      const result = await validateSpec(body, request.auth.vertical, governance, encryptionLayerPresent);
+      return reply.send({ ...result, encryptionLayerPresent });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
       if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
@@ -60,9 +63,10 @@ export function registerSpecRoutes(app: FastifyInstance, db: DatabaseClient, gov
     try {
       const body = specBodySchema.parse(request.body);
       await assertEntityAccess(db, body.entityId, request.auth);
-      const result = await validateSpec(body, request.auth.vertical, governance);
+      const encryptionLayerPresent = await entityEncryptionLayerPresent(db, body.entityId);
+      const result = await validateSpec(body, request.auth.vertical, governance, encryptionLayerPresent);
       if (!result.deployable) {
-        return reply.status(400).send({ message: "Specification is not deployable", ...result });
+        return reply.status(400).send({ message: "Specification is not deployable", ...result, encryptionLayerPresent });
       }
       const payload = {
         ...body.schemaPayload,

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { isDirectorScope } from "./portfolio-routes.js";
 
 describe("isDirectorScope", () => {
-  const auth = { userId: "director-1", vertical: "rarestorm" as const };
+  const auth = { userId: "director-1", vertical: "rarestorm" as const, authMethod: "header" as const };
 
   beforeEach(() => {
     process.env.AUTH_TRUST_MODE = "dev";
@@ -19,7 +19,7 @@ describe("isDirectorScope", () => {
   it("returns true when x-user-role is director in dev mode", () => {
     expect(
       isDirectorScope(
-        { userId: "other", vertical: "rareangels" },
+        { userId: "other", vertical: "rareangels", authMethod: "header" },
         { headers: { "x-user-role": "director" } },
       ),
     ).toBe(true);
@@ -28,24 +28,24 @@ describe("isDirectorScope", () => {
   it("returns false for non-director without role header", () => {
     expect(
       isDirectorScope(
-        { userId: "analyst-1", vertical: "rareangels" },
+        { userId: "analyst-1", vertical: "rareangels", authMethod: "header" },
         { headers: {} },
       ),
     ).toBe(false);
   });
 
-  it("requires holding vertical in strict mode", () => {
+  it("requires OIDC holding director in strict mode", () => {
     process.env.AUTH_TRUST_MODE = "strict";
     expect(
       isDirectorScope(
-        { userId: "other", vertical: "rareangels" },
+        { userId: "other", vertical: "holding", authMethod: "header", role: "director" },
         { headers: { "x-user-role": "director" } },
       ),
     ).toBe(false);
     expect(
       isDirectorScope(
-        { userId: "other", vertical: "holding" },
-        { headers: { "x-user-role": "director" } },
+        { userId: "other", vertical: "holding", authMethod: "oidc", role: "director" },
+        { headers: {} },
       ),
     ).toBe(true);
   });

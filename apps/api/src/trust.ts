@@ -2,6 +2,7 @@ import type { DatabaseClient } from "@rarecrest/db";
 import type { IntelligenceClient } from "@rarecrest/intelligence-client";
 import type { VerticalKey } from "@rarecrest/contracts";
 import type { AuthContext } from "./auth.js";
+import { trustMode } from "./auth.js";
 
 export interface DerivedActivationControls {
   hardRuleClear: boolean;
@@ -14,6 +15,7 @@ export interface DerivedActivationControls {
     latestEvaluationId: string | null;
     openHumanReviews: number;
     killSwitchArmed: boolean;
+    killSwitchState: string | null;
   };
 }
 
@@ -26,7 +28,7 @@ export async function deriveActivationControls(
   entityId: string,
   agentId: string,
 ): Promise<DerivedActivationControls> {
-  const [envelope, evaluation, reviews, killSwitch] = await Promise.all([
+  const [envelope, evaluation, reviews, rosterHalt, durableKill] = await Promise.all([
     db.query<{ id: string; hard_rule_clear: boolean; deployable: boolean }>(
       `SELECT id, hard_rule_clear, deployable
        FROM rarecrest.permission_envelope_audits
@@ -51,6 +53,10 @@ export async function deriveActivationControls(
        LIMIT 1`,
       [entityId, agentId],
     ),
+    db.query<{ state: string }>(
+      `SELECT state FROM rarecrest.kill_switches WHERE entity_id = $1`,
+      [entityId],
+    ),
   ]);
 
   const env = envelope.rows[0];
@@ -58,13 +64,17 @@ export async function deriveActivationControls(
   const envelopeEnforceable = Boolean(env?.deployable);
   const evaluationSuiteRegistered = evaluation.rows.length > 0;
   const openHumanReviews = Number(reviews.rows[0]?.count ?? 0);
-  // Human review routing is "live" when the queue table is reachable (query succeeded).
-  // Kill switch is live when we can observe roster halt state (not client-attested).
+  const killState = durableKill.rows[0]?.state ?? null;
+  // Kill switches are "live" when durable store is queryable (table exists / query succeeded).
   const killSwitchesLive = true;
   const humanReviewRoutingLive = true;
+  const killSwitchArmed = killState === "armed" || killState === "triggered" || rosterHalt.rows.length > 0;
+
+  // Block activation when entity kill switch is armed or already triggered.
+  const activationClearOfKillSwitch = killState !== "armed" && killState !== "triggered";
 
   return {
-    hardRuleClear,
+    hardRuleClear: hardRuleClear && activationClearOfKillSwitch,
     envelopeEnforceable,
     evaluationSuiteRegistered,
     killSwitchesLive,
@@ -73,7 +83,8 @@ export async function deriveActivationControls(
       latestEnvelopeAuditId: env?.id ?? null,
       latestEvaluationId: evaluation.rows[0]?.id ?? null,
       openHumanReviews,
-      killSwitchArmed: killSwitch.rows.length > 0,
+      killSwitchArmed,
+      killSwitchState: killState,
     },
   };
 }
@@ -108,17 +119,20 @@ export async function appendDenyTrace(
 
 /**
  * Director cross-vertical scope requires explicit trust mode.
- * Header-only "director" is accepted only when AUTH_TRUST_MODE=dev (local demos).
- * Production-like modes require vertical === "holding" AND role director.
+ * Prefer JWT/OIDC role claim on AuthContext; fall back to header only in dev.
  */
 export function isVerifiedDirector(
   auth: AuthContext,
   headers: Record<string, unknown>,
 ): boolean {
-  const role = headers["x-user-role"];
-  const trustMode = (process.env.AUTH_TRUST_MODE ?? "dev").toLowerCase();
+  const headerRole = headers["x-user-role"];
+  const role = auth.role ?? (typeof headerRole === "string" ? headerRole : undefined);
   const claimsDirector = role === "director" || auth.userId === "director-1";
   if (!claimsDirector) return false;
-  if (trustMode === "dev") return true;
-  return auth.vertical === "holding" && role === "director";
+  if (trustMode() === "dev") return true;
+  // Strict: director must come from OIDC (or holding vertical with director role).
+  if (auth.authMethod === "oidc") {
+    return auth.vertical === "holding" && role === "director";
+  }
+  return false;
 }

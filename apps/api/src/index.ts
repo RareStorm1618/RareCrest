@@ -3,7 +3,7 @@ import cors from "@fastify/cors";
 import { DatabaseClient } from "@rarecrest/db";
 import { GovernanceClient } from "@rarecrest/governance-client";
 import { IntelligenceClient } from "@rarecrest/intelligence-client";
-import { extractAuth, enforceTenancy, AuthError, TenancyViolationError } from "./auth.js";
+import { enforceTenancy, AuthError, TenancyViolationError, resolveAuth } from "./auth.js";
 import { mapRouteError } from "./errors.js";
 import {
   createEntitySchema,
@@ -34,6 +34,8 @@ import { registerEntityRegistryRoutes } from "./routes/entity-registry-routes.js
 import { registerRuntimeRoutes } from "./routes/runtime-routes.js";
 import { registerIpRoutes } from "./routes/ip-routes.js";
 import { registerDesignStudioRoutes } from "./routes/design-studio-routes.js";
+import { registerKillSwitchRoutes } from "./routes/kill-switch-routes.js";
+import { registerPhiVaultRoutes } from "./routes/phi-vault-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import { z } from "zod";
@@ -62,7 +64,7 @@ export async function buildApp() {
 
   app.addHook("preHandler", async (request) => {
     if (request.url === "/health") return;
-    request.auth = extractAuth(request);
+    request.auth = await resolveAuth(request);
   });
 
   app.get("/health", async () => {
@@ -102,6 +104,8 @@ export async function buildApp() {
   registerRuntimeRoutes(app, db, intelligence, governance);
   registerIpRoutes(app, db);
   registerDesignStudioRoutes(app, db);
+  registerKillSwitchRoutes(app, db, governance);
+  registerPhiVaultRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

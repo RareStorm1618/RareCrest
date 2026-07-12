@@ -17,6 +17,9 @@ function mockDb(handlers: Record<string, unknown[]>): DatabaseClient {
       if (sql.includes("agent_roster")) {
         return { rows: handlers.roster ?? [] };
       }
+      if (sql.includes("kill_switches")) {
+        return { rows: handlers.kill ?? [] };
+      }
       return { rows: [] };
     }),
   } as unknown as DatabaseClient;
@@ -44,23 +47,47 @@ describe("deriveActivationControls (fail-closed)", () => {
     expect(controls.evaluationSuiteRegistered).toBe(true);
     expect(controls.source.latestEnvelopeAuditId).toBe("aud-1");
   });
+
+  it("clears hardRuleClear when durable kill switch is armed", async () => {
+    const controls = await deriveActivationControls(
+      mockDb({
+        envelope: [{ id: "aud-1", hard_rule_clear: true, deployable: true }],
+        evaluation: [{ id: "eval-1" }],
+        kill: [{ state: "armed" }],
+      }),
+      "e1",
+      "a1",
+    );
+    expect(controls.hardRuleClear).toBe(false);
+    expect(controls.source.killSwitchArmed).toBe(true);
+    expect(controls.source.killSwitchState).toBe("armed");
+  });
 });
 
 describe("isVerifiedDirector", () => {
   it("allows header director only in AUTH_TRUST_MODE=dev", () => {
     process.env.AUTH_TRUST_MODE = "dev";
     expect(
-      isVerifiedDirector({ userId: "u1", vertical: "rareangels" }, { "x-user-role": "director" }),
+      isVerifiedDirector(
+        { userId: "u1", vertical: "rareangels", authMethod: "header", role: "director" },
+        { "x-user-role": "director" },
+      ),
     ).toBe(true);
   });
 
-  it("requires holding vertical outside dev", () => {
+  it("requires OIDC holding director outside dev", () => {
     process.env.AUTH_TRUST_MODE = "strict";
     expect(
-      isVerifiedDirector({ userId: "u1", vertical: "rareangels" }, { "x-user-role": "director" }),
+      isVerifiedDirector(
+        { userId: "u1", vertical: "holding", authMethod: "header", role: "director" },
+        { "x-user-role": "director" },
+      ),
     ).toBe(false);
     expect(
-      isVerifiedDirector({ userId: "u1", vertical: "holding" }, { "x-user-role": "director" }),
+      isVerifiedDirector(
+        { userId: "u1", vertical: "holding", authMethod: "oidc", role: "director" },
+        {},
+      ),
     ).toBe(true);
   });
 });

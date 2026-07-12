@@ -5,11 +5,15 @@ import type { PortfolioRollup } from "@rarecrest/contracts";
 
 const client = new RareCrestApiClient({
   baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000",
-  getHeaders: () => ({
-    "x-user-id": "director-1",
-    "x-user-role": "director",
-    "x-vertical": "holding",
-  }),
+  getHeaders: () => {
+    const bearer = process.env.EXPO_PUBLIC_API_BEARER_TOKEN;
+    if (bearer) return { Authorization: `Bearer ${bearer}` };
+    return {
+      "x-user-id": "director-1",
+      "x-user-role": "director",
+      "x-vertical": "holding",
+    };
+  },
 });
 
 export default function App() {

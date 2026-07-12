@@ -9,6 +9,7 @@ import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { appendDenyTrace } from "../trust.js";
+import { entityEncryptionLayerPresent } from "./phi-vault-routes.js";
 
 export function registerAgentStudioRoutes(
   app: FastifyInstance,
@@ -28,13 +29,15 @@ export function registerAgentStudioRoutes(
       requestedRights: z.array(z.enum(["sensitive_data", "code_execution", "external_comms"])),
       touchesPhi: z.boolean(),
       touchesFinancial: z.boolean(),
-      encryptionLayerPresent: z.boolean(),
+      /** Ignored — encryption layer is derived server-side from entity_encryption_layers. */
+      encryptionLayerPresent: z.boolean().optional(),
       destructiveWithinBounds: z.boolean(),
       humanInstructionId: z.string().optional(),
     });
     try {
       const body = schema.parse(request.body);
       await assertEntityAccess(db, body.entityId, request.auth);
+      const encryptionLayerPresent = await entityEncryptionLayerPresent(db, body.entityId);
       const checklist = Object.fromEntries(
         ENVELOPE_CHECKLIST.map((k) => [k, body.checklist[k] ?? false]),
       ) as Record<(typeof ENVELOPE_CHECKLIST)[number], boolean>;
@@ -44,7 +47,7 @@ export function registerAgentStudioRoutes(
         requestedRights: body.requestedRights as AgentRight[],
         touchesPhi: body.touchesPhi,
         touchesFinancial: body.touchesFinancial,
-        encryptionLayerPresent: body.encryptionLayerPresent,
+        encryptionLayerPresent,
         destructiveWithinBounds: body.destructiveWithinBounds,
         humanInstructionId: body.humanInstructionId,
       });
@@ -56,7 +59,7 @@ export function registerAgentStudioRoutes(
         requestedRights: body.requestedRights,
         touchesPhi: body.touchesPhi,
         touchesFinancial: body.touchesFinancial,
-        encryptionLayerPresent: body.encryptionLayerPresent,
+        encryptionLayerPresent,
         humanInstructionId: body.humanInstructionId,
       });
 
@@ -72,6 +75,7 @@ export function registerAgentStudioRoutes(
         checklistComplete: local.checklistComplete,
         violations: [...local.violations, ...govVerdict.reasons],
         hardRuleClear: local.hardRuleClear && govVerdict.allowed,
+        encryptionLayerPresent,
         traceId: govVerdict.traceId,
       });
     } catch (err) {
@@ -88,13 +92,15 @@ export function registerAgentStudioRoutes(
       requestedRights: z.array(z.enum(["sensitive_data", "code_execution", "external_comms"])),
       touchesPhi: z.boolean(),
       touchesFinancial: z.boolean(),
-      encryptionLayerPresent: z.boolean(),
+      /** Ignored — encryption layer is derived server-side. */
+      encryptionLayerPresent: z.boolean().optional(),
       issuedBy: z.string().min(1),
       humanInstructionId: z.string().optional(),
     });
     try {
       const body = schema.parse(request.body);
       await assertEntityAccess(db, body.entityId, request.auth);
+      const encryptionLayerPresent = await entityEncryptionLayerPresent(db, body.entityId);
 
       const govVerdict = await governance.checkHardRules({
         agentId: body.agentId,
@@ -103,7 +109,7 @@ export function registerAgentStudioRoutes(
         requestedRights: body.requestedRights,
         touchesPhi: body.touchesPhi,
         touchesFinancial: body.touchesFinancial,
-        encryptionLayerPresent: body.encryptionLayerPresent,
+        encryptionLayerPresent,
         humanInstructionId: body.humanInstructionId,
       });
       if (!govVerdict.allowed) {
@@ -119,6 +125,7 @@ export function registerAgentStudioRoutes(
           message: "Passport issuance blocked by hard-rule evaluator",
           reasons: govVerdict.reasons,
           traceId: govVerdict.traceId,
+          encryptionLayerPresent,
         });
       }
 
@@ -128,7 +135,7 @@ export function registerAgentStudioRoutes(
         requestedRights: body.requestedRights as AgentRight[],
         touchesPhi: body.touchesPhi,
         touchesFinancial: body.touchesFinancial,
-        encryptionLayerPresent: body.encryptionLayerPresent,
+        encryptionLayerPresent,
         issuedBy: body.issuedBy,
       });
       if (!passport.hardRuleClear) {
@@ -143,6 +150,7 @@ export function registerAgentStudioRoutes(
         return reply.status(403).send({
           message: "Passport issuance blocked by local hard-rule pre-check",
           constraints: passport.constraints,
+          encryptionLayerPresent,
         });
       }
 

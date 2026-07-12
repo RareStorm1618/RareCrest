@@ -26,6 +26,22 @@ export class GovernanceClient {
     return this.postJson("/rpc/runtime/activate", request);
   }
 
+  async armKillSwitch(request: {
+    entityId: string;
+    actorId: string;
+    reason: string;
+  }): Promise<Record<string, unknown>> {
+    return this.postJson("/rpc/kill-switch/arm", request);
+  }
+
+  async triggerKillSwitch(request: {
+    entityId: string;
+    actorId: string;
+    reason: string;
+  }): Promise<Record<string, unknown>> {
+    return this.postJson("/rpc/kill-switch/trigger", request);
+  }
+
   async healthCheck(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/health`);
