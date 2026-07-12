@@ -15,7 +15,9 @@
     "@rarecrest/skill-companion": "workspace:*",
     "@rarecrest/runtime-control": "workspace:*",
     "@rarecrest/db": "workspace:*",
-    "fastify": "^5.4.0"
+    "@rarecrest/vector-store": "workspace:*",
+    "fastify": "^5.4.0",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",

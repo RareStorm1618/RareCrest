@@ -25,10 +25,18 @@ export interface ModelResponse {
   tokensUsed: number;
 }
 
+export type ProviderCaller = (
+  provider: ModelProvider,
+  request: ModelRequest,
+) => Promise<ModelResponse>;
+
 export class ModelRouter {
   private policy: ModelRoutingPolicy;
 
-  constructor(policy: ModelRoutingPolicy) {
+  constructor(
+    policy: ModelRoutingPolicy,
+    private caller?: ProviderCaller,
+  ) {
     this.policy = policy;
   }
 
@@ -63,7 +71,9 @@ export class ModelRouter {
     provider: ModelProvider,
     request: ModelRequest,
   ): Promise<ModelResponse> {
-    // Provider abstraction — no secrets in prompts/logs
+    if (this.caller) {
+      return this.caller(provider, request);
+    }
     const content = `[${provider.name}] response to: ${request.prompt.slice(0, 100)}`;
     return {
       providerId: provider.id,

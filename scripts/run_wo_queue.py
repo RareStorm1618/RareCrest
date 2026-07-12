@@ -15,47 +15,52 @@ INIT_PS1 = REPO_ROOT / ".cursor/skills/software-factory/execution/scripts/init-w
 # WO number -> (title, owned paths for validator)
 WO_PATHS: dict[int, tuple[str, list[str]]] = {
     1: ("Provision managed PostgreSQL system of record with backups and PITR", [
-        "infra/docker-compose.yml", "infra/postgres/init/01-init.sql", "infra/provisioning/postgresql.md"]),
+        "infra/docker-compose.yml", "infra/postgres/init/01-init.sql", "infra/provisioning/postgresql.md",
+        "scripts/verify-infra.ps1"]),
     2: ("Define core relational schema and versioned migration framework", [
-        "packages/db/migrations/001_core_schema.sql", "packages/db/src/migrate.ts"]),
+        "packages/db/migrations/001_core_schema.sql", "packages/db/src/migrate.ts", "packages/db/src/client.test.ts"]),
     3: ("Implement tenancy keys and soft-delete windows in the data model", [
-        "packages/db/src/client.ts", "packages/db/migrations/001_core_schema.sql"]),
+        "packages/db/src/client.ts", "packages/db/migrations/001_core_schema.sql", "packages/db/src/client.test.ts"]),
     4: ("Stand up append-only decision-trace store with per-regime retention", [
-        "packages/db/migrations/001_core_schema.sql", "services/intelligence/src/decision-trace.ts"]),
+        "packages/db/migrations/001_core_schema.sql", "services/intelligence/src/decision-trace.ts",
+        "services/intelligence/src/decision-trace.test.ts"]),
     5: ("Provision object store and vector store", [
-        "packages/object-store/src/index.ts", "packages/vector-store/src/index.ts", "infra/docker-compose.yml"]),
+        "packages/object-store/src/index.ts", "packages/vector-store/src/index.ts", "infra/docker-compose.yml",
+        "packages/object-store/src/index.test.ts", "packages/vector-store/src/index.test.ts"]),
     6: ("Scaffold Node.js 22 / TypeScript API Server container", [
-        "apps/api/src/index.ts", "apps/api/package.json"]),
+        "apps/api/src/index.ts", "apps/api/package.json", "apps/api/Dockerfile", "apps/api/src/index.test.ts"]),
     7: ("Implement authentication and per-query tenancy enforcement", [
         "apps/api/src/auth.ts", "apps/api/src/auth.test.ts"]),
     8: ("Build internal RPC clients to Governance and Intelligence services", [
-        "packages/governance-client/src/index.ts", "packages/intelligence-client/src/index.ts"]),
+        "packages/governance-client/src/index.ts", "packages/intelligence-client/src/index.ts",
+        "packages/governance-client/src/index.test.ts", "packages/intelligence-client/src/index.test.ts"]),
     9: ("Implement input validation and field-level error contract", [
-        "apps/api/src/validation.ts"]),
+        "apps/api/src/validation.ts", "apps/api/src/validation.test.ts"]),
     10: ("Scaffold Rust Governance Engine container with internal-only RPC", [
-        "services/governance-engine/src/main.rs", "services/governance-engine/Cargo.toml"]),
+        "services/governance-engine/src/main.rs", "services/governance-engine/Cargo.toml",
+        "services/governance-engine/src/app.rs", "services/governance-engine/tests/http_smoke.rs"]),
     11: ("Implement HardRuleEvaluator (two-of-three rights, no autonomous financial action)", [
         "services/governance-engine/src/hard_rule_evaluator.rs"]),
     12: ("Implement EncryptionGateService for encrypt-before-access", [
-        "services/governance-engine/src/main.rs"]),
+        "services/governance-engine/src/encryption_gate.rs", "services/governance-engine/src/hard_rule_evaluator.rs"]),
     13: ("Implement DeploymentGateService (maturity floor and migration red-halt)", [
-        "services/governance-engine/src/main.rs"]),
+        "services/governance-engine/src/deployment_gate.rs", "services/governance-engine/src/runtime_enforcement.rs"]),
     14: ("Scaffold mixed Rust/Node Intelligence Services container", [
         "services/intelligence/src/index.ts", "services/intelligence/package.json"]),
     15: ("Implement provider-agnostic ModelRouter with failover", [
-        "services/intelligence/src/model-router.ts"]),
+        "services/intelligence/src/model-router.ts", "services/intelligence/src/model-router.test.ts"]),
     16: ("Implement deterministic ScoringEngine (Rust)", [
         "services/scoring/src/main.rs"]),
     17: ("Implement append-only DecisionTraceService", [
-        "services/intelligence/src/decision-trace.ts"]),
+        "services/intelligence/src/decision-trace.ts", "services/intelligence/src/decision-trace.test.ts"]),
     18: ("Implement SkillCompanionService RAG pipeline with streamed, validated output", [
-        "services/intelligence/src/skill-companion.ts"]),
+        "services/intelligence/src/skill-companion.ts", "services/intelligence/src/skill-companion.test.ts"]),
     19: ("Scaffold shared TypeScript monorepo (React 19 web + React Native mobile)", [
         "apps/web/package.json", "apps/mobile/package.json", "package.json"]),
     20: ("Build Backend-for-Frontend and shared API client layer", [
-        "packages/api-client/src/index.ts"]),
+        "packages/api-client/src/index.ts", "packages/api-client/src/index.test.ts"]),
     21: ("Implement zero-authority dual-track rendering shell", [
-        "packages/ui/src/dual-track.tsx", "apps/web/src/App.tsx"]),
+        "packages/ui/src/dual-track.tsx", "apps/web/src/App.tsx", "packages/ui/src/dual-track.test.ts"]),
 }
 
 

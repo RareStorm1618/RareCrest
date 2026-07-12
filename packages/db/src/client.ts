@@ -53,4 +53,20 @@ export function softDeleteClause(alias = "e"): string {
   return `${alias}.deleted_at IS NULL`;
 }
 
+/** Mark entity deleted within vertical scope (WO-3) */
+export async function softDeleteEntity(
+  db: DatabaseClient,
+  entityId: string,
+  vertical: VerticalKey,
+): Promise<boolean> {
+  const { clause, params } = tenancyWhereClause(vertical, "e");
+  const result = await db.query(
+    `UPDATE rarecrest.entities e
+     SET deleted_at = NOW(), updated_at = NOW()
+     WHERE e.id = $2 AND ${clause}`,
+    [...params, entityId],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 export { DatabaseClient as default };

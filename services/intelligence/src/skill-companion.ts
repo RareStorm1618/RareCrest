@@ -1,6 +1,7 @@
-/** WO-18 + WO-37: SkillCompanionService with FramingRuleGuard */
+/** WO-18: SkillCompanionService with RAG context retrieval */
 import { z } from "zod";
 import { evaluateGuard, type EntityContext, type RequestKind } from "@rarecrest/skill-companion";
+import type { VectorStoreClient } from "@rarecrest/vector-store";
 import type { ModelRouter } from "./model-router.js";
 
 export const structuredResponseSchema = z.object({
@@ -19,13 +20,31 @@ export interface SkillQuery {
   context?: string[];
   requestKind?: RequestKind;
   entityContext?: EntityContext | null;
+  /** Optional embedding vector for framework-canon retrieval */
+  queryVector?: number[];
 }
 
 export class SkillCompanionService {
-  constructor(private router: ModelRouter) {}
+  constructor(
+    private router: ModelRouter,
+    private vectorStore?: VectorStoreClient,
+  ) {}
+
+  async retrieveContext(query: SkillQuery): Promise<string[]> {
+    const base = query.context ?? [];
+    if (!this.vectorStore || !query.queryVector?.length) {
+      return base;
+    }
+    const hits = await this.vectorStore.search(query.queryVector, 3);
+    const retrieved = hits
+      .map((hit) => String(hit.payload.summary ?? hit.payload.title ?? hit.id))
+      .filter(Boolean);
+    return [...base, ...retrieved];
+  }
 
   async *stream(query: SkillQuery): AsyncGenerator<string> {
-    const prompt = this.buildPrompt(query);
+    const context = await this.retrieveContext(query);
+    const prompt = this.buildPrompt({ ...query, context });
     const response = await this.router.route({ prompt, maxTokens: 1024 });
     const chunks = response.content.match(/.{1,20}/g) ?? [response.content];
     for (const chunk of chunks) {
@@ -45,14 +64,17 @@ export class SkillCompanionService {
         guard,
       };
     }
-    const prompt = this.buildPrompt(query);
+    const context = await this.retrieveContext(query);
+    const prompt = this.buildPrompt({ ...query, context });
     const response = await this.router.route({ prompt, maxTokens: 1024 });
 
     const candidate: StructuredResponse = {
       summary: response.content.slice(0, 500),
-      recommendations: ["Review governance pillar maturity", "Complete readiness assessment"],
-      confidence: 0.85,
-      sources: query.context ?? ["framework-canon"],
+      recommendations: context.length
+        ? context.slice(0, 2).map((c) => `Review: ${c}`)
+        : ["Review governance pillar maturity", "Complete readiness assessment"],
+      confidence: context.length ? 0.9 : 0.85,
+      sources: context.length ? context : ["framework-canon"],
     };
 
     return { ...structuredResponseSchema.parse(candidate), guard };
@@ -62,7 +84,7 @@ export class SkillCompanionService {
     return evaluateGuard(kind, context);
   }
 
-  private buildPrompt(query: SkillQuery): string {
+  private buildPrompt(query: SkillQuery & { context?: string[] }): string {
     const ctx = (query.context ?? []).join("\n");
     return `Vertical: ${query.vertical}\nEntity: ${query.entityId}\nContext:\n${ctx}\nQuestion: ${query.question}`;
   }

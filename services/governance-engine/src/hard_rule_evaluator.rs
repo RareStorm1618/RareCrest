@@ -1,3 +1,4 @@
+use crate::encryption_gate::EncryptionGateService;
 use crate::types::{AgentRight, FieldError, HardRuleCheckRequest, HardRuleVerdict};
 use chrono::Utc;
 use uuid::Uuid;
@@ -39,13 +40,9 @@ impl HardRuleEvaluator {
             });
         }
 
-        // Rule 2: Encrypt-before-access for PHI
-        if request.touches_phi && !request.encryption_layer_present {
-            reasons.push(FieldError {
-                field: "encryptionLayerPresent".into(),
-                code: "ENCRYPT_BEFORE_ACCESS".into(),
-                message: "Protected health data requires encryption layer before agent access".into(),
-            });
+        // Rule 2: Encrypt-before-access for PHI (WO-12 EncryptionGateService)
+        if let Some(err) = EncryptionGateService::check(request) {
+            reasons.push(err);
         }
 
         // Rule 3: No autonomous financial action
@@ -123,6 +120,19 @@ mod tests {
         let verdict = HardRuleEvaluator::evaluate(&req);
         assert!(!verdict.allowed);
         assert!(verdict.reasons.iter().any(|r| r.code == "NO_AUTONOMOUS_FINANCIAL"));
+    }
+
+    #[test]
+    fn denies_more_than_two_rights_without_all_three() {
+        let mut req = base_request();
+        req.requested_rights = vec![
+            AgentRight::SensitiveData,
+            AgentRight::CodeExecution,
+            AgentRight::ExternalComms,
+        ];
+        let verdict = HardRuleEvaluator::evaluate(&req);
+        assert!(!verdict.allowed);
+        assert!(verdict.reasons.iter().any(|r| r.code == "MAX_TWO_RIGHTS"));
     }
 
     #[test]

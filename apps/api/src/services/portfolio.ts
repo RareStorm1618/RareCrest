@@ -5,6 +5,7 @@ import type {
   VerticalKey,
 } from "@rarecrest/contracts";
 import type { DatabaseClient } from "@rarecrest/db";
+import { softDeleteClause, tenancyWhereClause } from "@rarecrest/db";
 import {
   aggregateByBand,
   aggregateByGovernanceStatus,
@@ -83,10 +84,11 @@ export class PortfolioService {
 
   async getRollup(scopeVertical?: VerticalKey): Promise<PortfolioRollup> {
     const params: unknown[] = [];
-    let where = "e.deleted_at IS NULL";
+    let where = softDeleteClause("e");
     if (scopeVertical) {
-      where += " AND e.vertical = $1";
-      params.push(scopeVertical);
+      const tenancy = tenancyWhereClause(scopeVertical, "e");
+      where = tenancy.clause;
+      params.push(...tenancy.params);
     }
 
     const result = await this.db.query<EntityRow>(
@@ -145,9 +147,9 @@ export class PortfolioService {
     let sql = `SELECT id, name, vertical, tenancy_key, entity_type, is_holding_entity, mode, band,
                       regulatory_regimes, governance_status, deployment_locked, maturity_level,
                       assessed_at, created_at, updated_at, deleted_at
-               FROM rarecrest.entities WHERE id = $1 AND deleted_at IS NULL`;
+               FROM rarecrest.entities e WHERE e.id = $1 AND ${softDeleteClause("e")}`;
     if (scopeVertical) {
-      sql += " AND vertical = $2";
+      sql += " AND e.vertical = $2";
       params.push(scopeVertical);
     }
     const result = await this.db.query<EntityRow>(sql, params);
@@ -172,6 +174,17 @@ export class PortfolioService {
                  assessed_at, created_at, updated_at, deleted_at`;
     const result = await this.db.query<EntityRow>(sql, params);
     return result.rows[0] ?? null;
+  }
+
+  async softDeleteEntity(entityId: string, scopeVertical: VerticalKey): Promise<boolean> {
+    const { clause, params } = tenancyWhereClause(scopeVertical, "e");
+    const result = await this.db.query(
+      `UPDATE rarecrest.entities e
+       SET deleted_at = NOW(), updated_at = NOW()
+       WHERE e.id = $${params.length + 1} AND ${clause}`,
+      [...params, entityId],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async addAttentionFlag(

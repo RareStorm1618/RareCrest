@@ -3,7 +3,7 @@
 # Review Log: WO-17
 
 **Work Order:** WO-17 — Implement append-only DecisionTraceService
-**Initialized At (UTC):** 2026-07-11T23:54:32Z
+**Initialized At (UTC):** 2026-07-12T03:41:43Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: services/intelligence/src/decision-trace.ts
+Files reviewed: services/intelligence/src/decision-trace.ts, services/intelligence/src/decision-trace.test.ts

@@ -1,6 +1,7 @@
 -- RareCrest PostgreSQL initialization
 -- WO-1: Provision managed PostgreSQL with scoped service credentials
--- Internal-network-only access; no public surface; encryption at rest (managed/cloud)
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Create scoped service roles (WO-1: per-service credentials)
 DO $$

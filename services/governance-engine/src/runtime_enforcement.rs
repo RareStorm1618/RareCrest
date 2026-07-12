@@ -1,3 +1,4 @@
+use crate::deployment_gate::DeploymentGateService;
 use crate::hard_rule_evaluator::HardRuleEvaluator;
 use crate::types::{HardRuleCheckRequest, HardRuleVerdict};
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,10 @@ pub struct ActivationRequest {
     pub evaluation_suite_registered: bool,
     pub kill_switches_live: bool,
     pub human_review_routing_live: bool,
+    /// WO-13: optional deployment gate inputs
+    pub maturity_score: Option<u8>,
+    pub maturity_threshold: Option<u8>,
+    pub migration_blocked: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,6 +47,16 @@ impl RuntimeEnforcementService {
         if !req.human_review_routing_live {
             missing.push("human_review_routing".into());
         }
+        if let (Some(score), Some(threshold)) = (req.maturity_score, req.maturity_threshold) {
+            if !DeploymentGateService::check_maturity_floor(score, threshold) {
+                missing.push("maturity_floor".into());
+            }
+        }
+        if let Some(blocked) = req.migration_blocked {
+            if !DeploymentGateService::check_migration_red_halt(blocked) {
+                missing.push("migration_red_halt".into());
+            }
+        }
         ActivationVerdict {
             permitted: missing.is_empty(),
             missing_controls: missing,
@@ -67,6 +82,9 @@ mod tests {
             evaluation_suite_registered: true,
             kill_switches_live: true,
             human_review_routing_live: true,
+            maturity_score: Some(4),
+            maturity_threshold: Some(3),
+            migration_blocked: Some(false),
         }
     }
 
@@ -86,5 +104,15 @@ mod tests {
         assert!(!v.permitted);
         assert!(v.missing_controls.contains(&"kill_switches".to_string()));
         assert!(v.missing_controls.contains(&"human_review_routing".to_string()));
+    }
+
+    #[test]
+    fn blocks_activation_when_deployment_gate_fails() {
+        let mut req = full_controls();
+        req.maturity_score = Some(1);
+        req.maturity_threshold = Some(3);
+        let v = RuntimeEnforcementService::evaluate_activation(&req);
+        assert!(!v.permitted);
+        assert!(v.missing_controls.contains(&"maturity_floor".to_string()));
     }
 }

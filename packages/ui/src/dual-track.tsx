@@ -7,10 +7,25 @@ export interface DualTrackProps {
   title?: string;
 }
 
+/** Validates dual-track shell inputs before render (WO-21) */
+export function validateDualTrackContent(
+  narrative: string,
+  schemaPayload: Record<string, unknown>,
+): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!narrative.trim()) errors.push("narrative_required");
+  if (Object.keys(schemaPayload).length === 0) errors.push("schema_payload_required");
+  return { valid: errors.length === 0, errors };
+}
+
 export function DualTrackView({ narrative, schemaPayload, title }: DualTrackProps) {
+  const validation = validateDualTrackContent(narrative, schemaPayload);
   return (
-    <div className="dual-track" data-testid="dual-track-view">
+    <div className="dual-track" data-testid="dual-track-view" data-valid={validation.valid}>
       {title && <h2>{title}</h2>}
+      {!validation.valid && (
+        <p data-testid="dual-track-validation-errors">{validation.errors.join(",")}</p>
+      )}
       <section data-track="narrative" aria-label="Human narrative">
         <h3>Human Narrative</h3>
         <p>{narrative}</p>

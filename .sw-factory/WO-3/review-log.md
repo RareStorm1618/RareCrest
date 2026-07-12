@@ -3,7 +3,7 @@
 # Review Log: WO-3
 
 **Work Order:** WO-3 — Implement tenancy keys and soft-delete windows in the data model
-**Initialized At (UTC):** 2026-07-11T23:54:26Z
+**Initialized At (UTC):** 2026-07-12T03:41:41Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: packages/db/src/client.ts, packages/db/migrations/001_core_schema.sql
+Files reviewed: packages/db/src/client.ts, packages/db/migrations/001_core_schema.sql, packages/db/src/client.test.ts

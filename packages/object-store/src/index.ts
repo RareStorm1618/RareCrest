@@ -5,6 +5,8 @@ export interface ObjectStoreConfig {
   accessKey: string;
   secretKey: string;
   bucket: string;
+  /** When true, failed PUT responses throw instead of dev fallback */
+  strictMode?: boolean;
 }
 
 export interface StoredObject {
@@ -27,8 +29,10 @@ export class ObjectStoreClient {
       },
       body,
     });
-    if (!response.ok && response.status !== 404) {
-      // Dev mode: accept local MinIO or simulate
+    if (!response.ok) {
+      if (this.config.strictMode) {
+        throw new Error(`Object store put failed: ${response.status}`);
+      }
     }
     return {
       key,

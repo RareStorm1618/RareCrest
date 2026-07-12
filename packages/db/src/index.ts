@@ -1,2 +1,2 @@
-export { DatabaseClient, tenancyWhereClause, softDeleteClause } from "./client.js";
-export { runMigrations } from "./migrate.js";
+export { DatabaseClient, tenancyWhereClause, softDeleteClause, softDeleteEntity } from "./client.js";
+export { runMigrations, migrationChecksum, verifyMigrationChecksum } from "./migrate.js";

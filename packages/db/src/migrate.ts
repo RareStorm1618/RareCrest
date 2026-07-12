@@ -11,6 +11,14 @@ function checksum(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+export function migrationChecksum(content: string): string {
+  return checksum(content);
+}
+
+export function verifyMigrationChecksum(stored: string, content: string): boolean {
+  return stored === checksum(content);
+}
+
 export async function runMigrations(db: DatabaseClient): Promise<string[]> {
   const applied: string[] = [];
   const files = readdirSync(MIGRATIONS_DIR)
@@ -19,19 +27,25 @@ export async function runMigrations(db: DatabaseClient): Promise<string[]> {
 
   for (const file of files) {
     const version = file.replace(".sql", "");
-    const existing = await db.query(
-      "SELECT version FROM rarecrest.schema_migrations WHERE version = $1",
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf-8");
+    const digest = checksum(sql);
+    const existing = await db.query<{ version: string; checksum: string }>(
+      "SELECT version, checksum FROM rarecrest.schema_migrations WHERE version = $1",
       [version],
     );
-    if (existing.rows.length > 0) continue;
+    if (existing.rows.length > 0) {
+      if (!verifyMigrationChecksum(existing.rows[0].checksum, sql)) {
+        throw new Error(`Migration checksum mismatch for ${version}`);
+      }
+      continue;
+    }
 
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf-8");
     await db.query("BEGIN");
     try {
       await db.query(sql);
       await db.query(
         "INSERT INTO rarecrest.schema_migrations (version, checksum) VALUES ($1, $2)",
-        [version, checksum(sql)],
+        [version, digest],
       );
       await db.query("COMMIT");
       applied.push(version);

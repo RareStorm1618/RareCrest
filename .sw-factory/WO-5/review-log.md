@@ -3,7 +3,7 @@
 # Review Log: WO-5
 
 **Work Order:** WO-5 — Provision object store and vector store
-**Initialized At (UTC):** 2026-07-11T23:54:27Z
+**Initialized At (UTC):** 2026-07-12T03:41:41Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: packages/object-store/src/index.ts, packages/vector-store/src/index.ts, infra/docker-compose.yml
+Files reviewed: packages/object-store/src/index.ts, packages/vector-store/src/index.ts, infra/docker-compose.yml, packages/object-store/src/index.test.ts, packages/vector-store/src/index.test.ts

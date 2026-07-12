@@ -433,9 +433,15 @@ importers:
       '@rarecrest/skill-companion':
         specifier: workspace:*
         version: link:../../packages/skill-companion
+      '@rarecrest/vector-store':
+        specifier: workspace:*
+        version: link:../../packages/vector-store
       fastify:
         specifier: ^5.4.0
         version: 5.10.0
+      zod:
+        specifier: ^3.25.67
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.15.30
