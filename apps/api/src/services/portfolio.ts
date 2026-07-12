@@ -6,8 +6,12 @@ import type {
 } from "@rarecrest/contracts";
 import type { DatabaseClient } from "@rarecrest/db";
 import {
+  aggregateByBand,
+  aggregateByGovernanceStatus,
   buildDefaultRegulatoryProfile,
+  isPortfolioClear,
   isRegulatoryProfileIncomplete,
+  totalAttentionFlagCount,
 } from "@rarecrest/portfolio";
 
 export interface RegisterEntityInput {
@@ -102,17 +106,8 @@ export class PortfolioService {
       params,
     );
 
-    const byBand: Record<string, number> = {};
-    const byGovernanceStatus: Record<string, number> = {};
-    let attentionFlagCount = 0;
-
     const entities = result.rows.map((row) => {
       const flagCount = Number(row.attention_flag_count ?? 0);
-      attentionFlagCount += flagCount;
-      byBand[row.band] = (byBand[row.band] ?? 0) + 1;
-      byGovernanceStatus[row.governance_status] =
-        (byGovernanceStatus[row.governance_status] ?? 0) + 1;
-
       return {
         id: row.id,
         name: row.name,
@@ -135,11 +130,11 @@ export class PortfolioService {
     return {
       entities,
       summary: {
-        byBand,
-        byGovernanceStatus,
+        byBand: aggregateByBand(entities),
+        byGovernanceStatus: aggregateByGovernanceStatus(entities),
         totalEntities: entities.length,
-        attentionFlagCount,
-        portfolioClear: attentionFlagCount === 0,
+        attentionFlagCount: totalAttentionFlagCount(entities),
+        portfolioClear: isPortfolioClear(entities),
       },
       generatedAt: new Date().toISOString(),
     };

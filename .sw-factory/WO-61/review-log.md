@@ -2,8 +2,8 @@
 
 # Review Log: WO-61
 
-**Work Order:** WO-61 — WO-61 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:52Z
+**Work Order:** WO-61 — Implement RegulatoryCalendarService (API Server)
+**Initialized At (UTC):** 2026-07-12T03:24:07Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: apps/api/src/routes/phase-routes.ts, apps/api/src/index.ts
+Files reviewed: packages/legal-compliance/src/regulatory-calendar.ts, apps/api/src/routes/legal-routes.ts

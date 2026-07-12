@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-59
 
 **Work Order Number:** WO-59
-**Work Order Title:** WO-59 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:51Z
+**Work Order Title:** Implement CounselEscalationRouter and awaiting-counsel blocks (API Server)
+**Initialized At (UTC):** 2026-07-12T03:24:06Z
 
 ## Phase 1: Start / Context Gathering
 

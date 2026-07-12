@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-61
 
 **Work Order Number:** WO-61
-**Work Order Title:** WO-61 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:52Z
+**Work Order Title:** Implement RegulatoryCalendarService (API Server)
+**Initialized At (UTC):** 2026-07-12T03:24:07Z
 
 ## Phase 1: Start / Context Gathering
 

@@ -5,6 +5,9 @@ import { DecisionTraceService } from "./decision-trace.js";
 import { SkillCompanionService } from "./skill-companion.js";
 import { runEvaluation, persistEvaluationRun } from "./evaluation-runner.js";
 import type { VerticalKey } from "@rarecrest/contracts";
+import { draftLegalSupportResponse } from "./legal-support-teammate.js";
+import { scanProhibitedClaims } from "./prohibited-claims.js";
+import { AutoCaptureService } from "./auto-capture.js";
 
 const PORT = Number(process.env.INTELLIGENCE_PORT ?? 3002);
 
@@ -24,6 +27,7 @@ export async function buildIntelligenceApp() {
 
   const traces = new DecisionTraceService(db);
   const companion = new SkillCompanionService(router);
+  const autoCapture = new AutoCaptureService();
 
   app.get("/health", async () => ({
     status: "ok",
@@ -86,6 +90,18 @@ export async function buildIntelligenceApp() {
     },
   );
 
+  app.post<{
+    Body: {
+      issue: string;
+      urgency: "low" | "medium" | "high" | "critical";
+      jurisdiction?: string;
+      containsRegulatedData: boolean;
+    };
+  }>("/rpc/legal-support", async (request, reply) => {
+    const response = draftLegalSupportResponse(request.body);
+    return reply.send(response);
+  });
+
   app.post<{ Body: { agentId: string; entityId: string; accuracy: number; overrideRate: number; accuracyFloor?: number; overrideCeiling?: number } }>(
     "/rpc/evaluation/run",
     async (request, reply) => {
@@ -100,6 +116,37 @@ export async function buildIntelligenceApp() {
       const result = runEvaluation(input);
       const persisted = await persistEvaluationRun(db, input, result);
       return reply.send(persisted);
+    },
+  );
+
+  app.post<{ Body: { entityId: string; vertical: VerticalKey; source: string; signalType: "policy_violation" | "accuracy_drop" | "override_spike" | "new_regulation" | "operator_note"; confidence: number; payload: Record<string, unknown> } }>(
+    "/rpc/auto-capture",
+    async (request, reply) => {
+      const verdict = autoCapture.evaluate(request.body);
+      if (!verdict.accepted) {
+        return reply.status(202).send(verdict);
+      }
+      const trace = await traces.append({
+        entityId: request.body.entityId,
+        vertical: request.body.vertical,
+        action: `auto_capture:${request.body.signalType}`,
+        verdict: "allow",
+        payload: {
+          source: request.body.source,
+          captureKind: verdict.captureKind,
+          score: verdict.score,
+          signal: request.body.payload,
+        },
+      });
+      return reply.status(201).send({ ...verdict, traceId: trace.id });
+    },
+  );
+
+  app.post<{ Body: { claims: string[] } }>(
+    "/rpc/prohibited-claims",
+    async (request, reply) => {
+      const result = scanProhibitedClaims({ claims: request.body.claims });
+      return reply.send(result);
     },
   );
 

@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-50
 
 **Work Order Number:** WO-50
-**Work Order Title:** WO-50 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:48Z
+**Work Order Title:** Implement Agent Passport issuance, verification, and lifecycle (API Server)
+**Initialized At (UTC):** 2026-07-12T03:24:05Z
 
 ## Phase 1: Start / Context Gathering
 

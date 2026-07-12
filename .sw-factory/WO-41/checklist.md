@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-41
 
 **Work Order Number:** WO-41
-**Work Order Title:** WO-41 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:44Z
+**Work Order Title:** Build IntelligenceStackModeler with decision-ledger separation
+**Initialized At (UTC):** 2026-07-12T03:24:03Z
 
 ## Phase 1: Start / Context Gathering
 

@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-49
 
 **Work Order Number:** WO-49
-**Work Order Title:** WO-49 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:47Z
+**Work Order Title:** Build CapabilityAndAgencyView (Client App)
+**Initialized At (UTC):** 2026-07-12T03:24:04Z
 
 ## Phase 1: Start / Context Gathering
 

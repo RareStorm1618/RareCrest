@@ -3,7 +3,12 @@ import type { DatabaseClient } from "@rarecrest/db";
 import {
   REWRITE_STEPS,
   buildEdgeTwinPlan,
+  buildFromZeroWorkshop,
+  computeTransitionBudget,
+  evaluateDataPlaneInversion,
   evaluateDeprecationGate,
+  evaluateKillSwitches,
+  evaluateMvis,
   isStepComplete,
   validateStepSequence,
   type RewriteStepId,
@@ -32,7 +37,11 @@ export function registerMigrationWorkspaceRoutes(app: FastifyInstance, db: Datab
       const body = schema.parse(request.body);
       const stepId = body.stepId as RewriteStepId;
       const existing = await db.query(`SELECT steps FROM rarecrest.rewrite_step_progress WHERE entity_id = $1`, [body.entityId]);
-      const progress = (existing.rows[0]?.steps as Array<{ stepId: string; criteriaMet: Record<string, boolean>; complete: boolean }>) ?? [];
+      const progress = (existing.rows[0]?.steps as Array<{
+        stepId: RewriteStepId;
+        criteriaMet: Record<string, boolean>;
+        complete: boolean;
+      }>) ?? [];
       const seqError = validateStepSequence(progress, stepId);
       if (seqError) return reply.status(400).send({ message: seqError });
       const complete = isStepComplete(stepId, body.criteriaMet);
@@ -77,5 +86,95 @@ export function registerMigrationWorkspaceRoutes(app: FastifyInstance, db: Datab
       [entityId, body.agentId, body.reason],
     );
     return reply.status(201).send({ recorded: true });
+  });
+
+  app.post("/api/v1/migration/transition-budget", async (request, reply) => {
+    const schema = z.object({
+      annualRunCost: z.number().positive(),
+      transitionWindowMonths: z.number().int().positive(),
+      contingencyPct: z.number().min(0).max(100),
+      dualRunMultiplier: z.number().min(1).optional(),
+    });
+    try {
+      const body = schema.parse(request.body);
+      return reply.send(computeTransitionBudget(body));
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+
+  app.post("/api/v1/migration/mvis/evaluate", async (request, reply) => {
+    const schema = z.object({
+      signals: z.array(
+        z.object({
+          name: z.string().min(1),
+          weight: z.number().positive(),
+          score: z.number().min(0).max(10),
+        }),
+      ),
+    });
+    try {
+      const body = schema.parse(request.body);
+      return reply.send(evaluateMvis(body.signals));
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+
+  app.post("/api/v1/migration/kill-switches/evaluate", async (request, reply) => {
+    const schema = z.object({
+      switches: z.array(
+        z.object({
+          id: z.string().min(1),
+          armed: z.boolean(),
+          testedWithinDays: z.number().int().min(0),
+          ownerOnCall: z.boolean(),
+        }),
+      ),
+    });
+    try {
+      const body = schema.parse(request.body);
+      return reply.send(evaluateKillSwitches(body.switches));
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+
+  app.post("/api/v1/migration/data-plane-inversion", async (request, reply) => {
+    const schema = z.object({
+      sources: z.array(
+        z.object({
+          streamId: z.string().min(1),
+          piiClass: z.enum(["none", "limited", "high"]),
+          lineageComplete: z.boolean(),
+          reversible: z.boolean(),
+        }),
+      ),
+    });
+    try {
+      const body = schema.parse(request.body);
+      return reply.send(evaluateDataPlaneInversion(body.sources));
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+
+  app.post("/api/v1/migration/from-zero/workshop", async (request, reply) => {
+    const schema = z.object({
+      weeks: z.number().int().positive(),
+      tracks: z.array(z.enum(["strategy", "platform", "operations", "controls"])).min(1),
+      teamSize: z.number().int().positive(),
+    });
+    try {
+      const body = schema.parse(request.body);
+      return reply.send({ plan: buildFromZeroWorkshop(body) });
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
   });
 }

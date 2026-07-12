@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-44
 
 **Work Order Number:** WO-44
-**Work Order Title:** WO-44 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:45Z
+**Work Order Title:** Build DataGovernanceBinder and workflow data manifest
+**Initialized At (UTC):** 2026-07-12T03:24:03Z
 
 ## Phase 1: Start / Context Gathering
 

@@ -22,6 +22,8 @@ import { registerWorkflowRoutes } from "./routes/workflow-routes.js";
 import { registerAgentStudioRoutes } from "./routes/agent-studio-routes.js";
 import { registerMigrationWorkspaceRoutes } from "./routes/migration-workspace-routes.js";
 import { registerLegalRoutes } from "./routes/legal-routes.js";
+import { registerVendorShortcutRoutes } from "./routes/vendor-shortcut-routes.js";
+import { registerCapabilityRoutes } from "./routes/capability-routes.js";
 import { registerCommandRoutes } from "./routes/command-routes.js";
 import { registerAssessmentRoutes } from "./routes/assessment-routes.js";
 import { registerExportRoutes } from "./routes/export-routes.js";
@@ -30,6 +32,8 @@ import { registerSpecRoutes } from "./routes/spec-routes.js";
 import { registerGovernanceGatewayRoutes } from "./routes/governance-gateway-routes.js";
 import { registerEntityRegistryRoutes } from "./routes/entity-registry-routes.js";
 import { registerRuntimeRoutes } from "./routes/runtime-routes.js";
+import { registerIpRoutes } from "./routes/ip-routes.js";
+import { registerDesignStudioRoutes } from "./routes/design-studio-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import { z } from "zod";
@@ -84,6 +88,8 @@ export async function buildApp() {
   registerAgentStudioRoutes(app, db, governance);
   registerMigrationWorkspaceRoutes(app, db);
   registerLegalRoutes(app, db);
+  registerVendorShortcutRoutes(app, db);
+  registerCapabilityRoutes(app, db);
   registerCommandRoutes(app, db);
   registerAssessmentRoutes(app, db);
   registerExportRoutes(app, db, intelligence);
@@ -92,6 +98,8 @@ export async function buildApp() {
   registerGovernanceGatewayRoutes(app, governance, intelligence);
   registerEntityRegistryRoutes(app, db);
   registerRuntimeRoutes(app, db, intelligence, governance);
+  registerIpRoutes(app, db);
+  registerDesignStudioRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

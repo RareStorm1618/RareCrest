@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-48
 
 **Work Order Number:** WO-48
-**Work Order Title:** WO-48 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:47Z
+**Work Order Title:** Implement CapabilityRegistryService and AgencyMapService (API Server)
+**Initialized At (UTC):** 2026-07-12T03:24:04Z
 
 ## Phase 1: Start / Context Gathering
 

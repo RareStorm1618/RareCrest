@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-40
 
 **Work Order Number:** WO-40
-**Work Order Title:** WO-40 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:43Z
+**Work Order Title:** Build DRIVE/SHAPE scorecards and BackcastingCanvas
+**Initialized At (UTC):** 2026-07-12T03:24:02Z
 
 ## Phase 1: Start / Context Gathering
 

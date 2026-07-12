@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-24
 
 **Work Order Number:** WO-24
-**Work Order Title:** WO-24 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:37Z
+**Work Order Title:** Implement PortfolioRollupService and portfolio status view
+**Initialized At (UTC):** 2026-07-12T03:24:01Z
 
 ## Phase 1: Start / Context Gathering
 

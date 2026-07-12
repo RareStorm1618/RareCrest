@@ -62,3 +62,5 @@ export function isSlaBreached(slaTargetAt: string): boolean {
 
 export * from "./human-review.js";
 export * from "./version-history.js";
+export * from "./immutable-log.js";
+export * from "./learning-velocity.js";

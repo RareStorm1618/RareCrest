@@ -1,6 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
-import { createLegalMatterPayload, validateLegalMatterStatus } from "@rarecrest/legal-compliance";
+import {
+  buildRegulatoryCalendar,
+  createLegalMatterPayload,
+  evaluateCounselEscalation,
+  validateLegalMatterStatus,
+} from "@rarecrest/legal-compliance";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 
@@ -38,5 +43,101 @@ export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
       [entityId],
     );
     return reply.send({ entityId, matters: result.rows });
+  });
+
+  app.post("/api/v1/legal/regulatory-calendar", async (request, reply) => {
+    const schema = z.object({
+      entityId: z.string().uuid(),
+      regimes: z.array(z.string().min(1)).min(1),
+      periodStart: z.string().datetime().optional(),
+    });
+    try {
+      const body = schema.parse(request.body);
+      const periodStart = body.periodStart ?? new Date().toISOString();
+      const events = buildRegulatoryCalendar(body.entityId, body.regimes, periodStart);
+
+      for (const event of events) {
+        await db.query(
+          `INSERT INTO rarecrest.regulatory_calendar_events
+             (entity_id, regime, event_type, due_at, cadence, priority, source_period_start)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [event.entityId, event.regime, event.eventType, event.dueAt, event.cadence, event.priority, periodStart],
+        );
+      }
+
+      return reply.status(201).send({ entityId: body.entityId, periodStart, events });
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+
+  app.get("/api/v1/legal/regulatory-calendar/:entityId", async (request, reply) => {
+    const { entityId } = request.params as { entityId: string };
+    const result = await db.query(
+      `SELECT id, entity_id AS "entityId", regime, event_type AS "eventType", due_at AS "dueAt",
+              cadence, priority, source_period_start AS "sourcePeriodStart", created_at AS "createdAt"
+       FROM rarecrest.regulatory_calendar_events
+       WHERE entity_id = $1
+       ORDER BY due_at ASC`,
+      [entityId],
+    );
+    return reply.send({ entityId, events: result.rows });
+  });
+
+  app.post("/api/v1/legal/counsel-escalations", async (request, reply) => {
+    const schema = z.object({
+      entityId: z.string().uuid(),
+      matterId: z.string().uuid().optional(),
+      issueType: z.enum(["regulatory", "litigation", "privacy", "contract"]),
+      crossBorderImpact: z.boolean(),
+      customerHarmRisk: z.boolean(),
+      financialExposureUsd: z.number().min(0),
+    });
+    try {
+      const body = schema.parse(request.body);
+      const decision = evaluateCounselEscalation({
+        matterId: body.matterId,
+        issueType: body.issueType,
+        crossBorderImpact: body.crossBorderImpact,
+        customerHarmRisk: body.customerHarmRisk,
+        financialExposureUsd: body.financialExposureUsd,
+      });
+      const inserted = await db.query(
+        `INSERT INTO rarecrest.counsel_escalations
+          (entity_id, matter_id, trigger_code, rationale, urgency, required_within_hours, escalated)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, entity_id AS "entityId", matter_id AS "matterId", trigger_code AS "triggerCode",
+                   rationale, urgency, required_within_hours AS "requiredWithinHours",
+                   escalated, created_at AS "createdAt"`,
+        [
+          body.entityId,
+          body.matterId ?? null,
+          decision.triggerCode,
+          decision.rationale,
+          decision.urgency,
+          decision.requiredWithinHours,
+          decision.escalated,
+        ],
+      );
+      return reply.status(201).send(inserted.rows[0]);
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+
+  app.get("/api/v1/legal/counsel-escalations/:entityId", async (request, reply) => {
+    const { entityId } = request.params as { entityId: string };
+    const result = await db.query(
+      `SELECT id, entity_id AS "entityId", matter_id AS "matterId", trigger_code AS "triggerCode",
+              rationale, urgency, required_within_hours AS "requiredWithinHours",
+              escalated, created_at AS "createdAt"
+       FROM rarecrest.counsel_escalations
+       WHERE entity_id = $1
+       ORDER BY created_at DESC`,
+      [entityId],
+    );
+    return reply.send({ entityId, escalations: result.rows });
   });
 }

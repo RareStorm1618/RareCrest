@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-46
 
 **Work Order Number:** WO-46
-**Work Order Title:** WO-46 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:46Z
+**Work Order Title:** Implement Vendor Shortcut inventory and destination mapping (API Server)
+**Initialized At (UTC):** 2026-07-12T03:24:04Z
 
 ## Phase 1: Start / Context Gathering
 

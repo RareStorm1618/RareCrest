@@ -2,8 +2,8 @@
 
 # Review Log: WO-67
 
-**Work Order:** WO-67 — WO-67 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:55Z
+**Work Order:** WO-67 — Implement AutoCaptureService for runtime corrections and drift (Intelligence Services)
+**Initialized At (UTC):** 2026-07-12T03:24:08Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: apps/api/src/routes/phase-routes.ts, apps/api/src/index.ts
+Files reviewed: services/intelligence/src/auto-capture.ts

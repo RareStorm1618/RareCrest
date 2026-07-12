@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-63
 
 **Work Order Number:** WO-63
-**Work Order Title:** WO-63 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:53Z
+**Work Order Title:** Implement IP ownership, chain of title, and portfolio reconciliation (API Server)
+**Initialized At (UTC):** 2026-07-12T03:24:07Z
 
 ## Phase 1: Start / Context Gathering
 

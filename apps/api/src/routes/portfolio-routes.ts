@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { VerticalKey } from "@rarecrest/contracts";
+import { aggregateByMigrationMode } from "@rarecrest/portfolio";
 import { z } from "zod";
 import type { AuthContext } from "../auth.js";
 import { formatZodErrors, verticalSchema } from "../validation.js";
@@ -44,6 +45,27 @@ export function registerPortfolioRoutes(app: FastifyInstance, portfolio: Portfol
       }
       const row = await portfolio.registerEntity(body);
       return reply.status(201).send(mapEntityRow(row));
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+
+  app.get("/api/v1/portfolio/summary", async (request, reply) => {
+    const schema = z.object({
+      vertical: verticalSchema.optional(),
+    });
+    try {
+      const query = schema.parse(request.query);
+      const director = isDirectorScope(request.auth, request);
+      if (!director && query.vertical && query.vertical !== request.auth.vertical) {
+        return reply.status(403).send({ message: "Cross-vertical summary access denied" });
+      }
+      const rollup = await portfolio.getRollup(director ? query.vertical : request.auth.vertical);
+      return reply.send({
+        ...rollup.summary,
+        byMigrationMode: aggregateByMigrationMode(rollup.entities),
+      });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
       throw err;

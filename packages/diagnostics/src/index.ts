@@ -143,3 +143,5 @@ export function evaluateMigrationGate(gatingAnswers: Record<string, "green" | "y
 
 export * from "./migration.js";
 export * from "./task-decomposition.js";
+export * from "./drive-shape.js";
+export * from "./vendor-shortcut.js";

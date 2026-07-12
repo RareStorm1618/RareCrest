@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-71
 
 **Work Order Number:** WO-71
-**Work Order Title:** WO-71 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:57Z
+**Work Order Title:** Implement KillSwitchController (Governance Engine)
+**Initialized At (UTC):** 2026-07-12T03:24:08Z
 
 ## Phase 1: Start / Context Gathering
 

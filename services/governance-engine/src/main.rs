@@ -1,17 +1,20 @@
 use crate::runtime_enforcement::{ActivationRequest, RuntimeEnforcementService};
 use crate::types::{HardRuleCheckRequest, HardRuleVerdict, HealthResponse};
 use axum::{
-    extract::Json,
+    extract::{Json, State},
     routing::{get, post},
     Router,
 };
 use chrono::Utc;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod hard_rule_evaluator;
+mod kill_switch_controller;
 mod runtime_enforcement;
 mod types;
+use kill_switch_controller::{KillSwitchArmRequest, KillSwitchController, KillSwitchTriggerRequest, KillSwitchVerdict};
 
 /// WO-12: EncryptionGateService
 pub struct EncryptionGateService;
@@ -60,16 +63,36 @@ async fn runtime_activate(Json(request): Json<ActivationRequest>) -> Json<crate:
     Json(RuntimeEnforcementService::evaluate_activation(&request))
 }
 
+async fn kill_switch_arm(
+    State(controller): State<Arc<Mutex<KillSwitchController>>>,
+    Json(request): Json<KillSwitchArmRequest>,
+) -> Json<KillSwitchVerdict> {
+    let mut guard = controller.lock().expect("kill switch mutex poisoned");
+    Json(guard.arm(&request))
+}
+
+async fn kill_switch_trigger(
+    State(controller): State<Arc<Mutex<KillSwitchController>>>,
+    Json(request): Json<KillSwitchTriggerRequest>,
+) -> Json<KillSwitchVerdict> {
+    let mut guard = controller.lock().expect("kill switch mutex poisoned");
+    Json(guard.trigger(&request))
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let kill_switch = Arc::new(Mutex::new(KillSwitchController::default()));
     let app = Router::new()
         .route("/health", get(health))
         .route("/rpc/hard-rule-check", post(hard_rule_check))
-        .route("/rpc/runtime/activate", post(runtime_activate));
+        .route("/rpc/runtime/activate", post(runtime_activate))
+        .route("/rpc/kill-switch/arm", post(kill_switch_arm))
+        .route("/rpc/kill-switch/trigger", post(kill_switch_trigger))
+        .with_state(kill_switch);
 
     let port: u16 = std::env::var("GOVERNANCE_PORT")
         .ok()

@@ -3,13 +3,16 @@ import type { DatabaseClient } from "@rarecrest/db";
 import type { GovernanceClient } from "@rarecrest/governance-client";
 import type { IntelligenceClient } from "@rarecrest/intelligence-client";
 import {
+  buildImmutableLog,
   buildHeldActionRelease,
+  computeLearningVelocity,
   defaultSlaTargetHours,
   filterRoster,
   isHealthDegraded,
   isSlaBreached,
   lookupLatestKnownGoodVersion,
   shouldRecordVersion,
+  type LearningSignal,
   type AgentHealth,
   type AgentStatus,
   type ReviewCategory,
@@ -271,6 +274,82 @@ export function registerRuntimeRoutes(
       return reply.send(result);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
+  });
+
+  app.get("/api/v1/runtime/learning-velocity", async (request, reply) => {
+    const schema = z.object({
+      entityId: z.string().uuid(),
+      agentId: z.string().optional(),
+      windowDays: z.coerce.number().int().min(1).max(365).default(30),
+    });
+    try {
+      const query = schema.parse(request.query);
+      await assertEntityAccess(db, query.entityId, request.auth);
+
+      const evalRows = await db.query(
+        `SELECT created_at AS "createdAt", drift_detected AS "driftDetected"
+         FROM rarecrest.evaluation_runs
+         WHERE entity_id = $1 AND ($2::text IS NULL OR agent_id = $2)
+         ORDER BY created_at DESC
+         LIMIT 200`,
+        [query.entityId, query.agentId ?? null],
+      );
+      const versionRows = await db.query(
+        `SELECT recorded_at AS "recordedAt"
+         FROM rarecrest.agent_version_history
+         WHERE entity_id = $1 AND ($2::text IS NULL OR agent_id = $2)
+         ORDER BY recorded_at DESC
+         LIMIT 200`,
+        [query.entityId, query.agentId ?? null],
+      );
+
+      const signals: LearningSignal[] = [
+        ...evalRows.rows.map((row) => ({
+          occurredAt: String(row.createdAt),
+          delta: row.driftDetected ? -0.2 : 0.25,
+          source: "evaluation" as const,
+        })),
+        ...versionRows.rows.map((row) => ({
+          occurredAt: String(row.recordedAt),
+          delta: 0.08,
+          source: "version_change" as const,
+        })),
+      ];
+
+      const velocity = computeLearningVelocity(signals, query.windowDays);
+      return reply.send({ entityId: query.entityId, agentId: query.agentId ?? null, windowDays: query.windowDays, velocity });
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
+  });
+
+  app.get("/api/v1/runtime/immutable-log/:entityId", async (request, reply) => {
+    const { entityId } = request.params as { entityId: string };
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const result = await db.query(
+        `SELECT id, action, verdict, created_at AS "createdAt"
+         FROM rarecrest.decision_traces
+         WHERE entity_id = $1
+         ORDER BY created_at ASC
+         LIMIT 500`,
+        [entityId],
+      );
+      const entries = buildImmutableLog(
+        result.rows.map((row) => ({
+          id: String(row.id),
+          action: String(row.action),
+          verdict: row.verdict as "allow" | "deny",
+          createdAt: new Date(row.createdAt as string).toISOString(),
+        })),
+      );
+      return reply.send({ entityId, entries });
+    } catch (err) {
       if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }

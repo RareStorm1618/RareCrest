@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-47
 
 **Work Order Number:** WO-47
-**Work Order Title:** WO-47 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:46Z
+**Work Order Title:** Build ShortcutAssessmentView and warn-and-record flow (Client App)
+**Initialized At (UTC):** 2026-07-12T03:24:04Z
 
 ## Phase 1: Start / Context Gathering
 

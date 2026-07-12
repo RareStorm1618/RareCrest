@@ -20,6 +20,11 @@ export function PortfolioStatusView({ rollup, loading, onSelectEntity }: Portfol
     );
   }
 
+  const migrationByMode = rollup.entities.reduce<Record<string, number>>((acc, entity) => {
+    acc[entity.mode] = (acc[entity.mode] ?? 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <section data-testid="portfolio-status" className="portfolio-status">
       <header className="portfolio-header">
@@ -40,6 +45,29 @@ export function PortfolioStatusView({ rollup, loading, onSelectEntity }: Portfol
             <span>{band}</span>
           </div>
         ))}
+      </div>
+
+      <div className="portfolio-summary-rows">
+        <div className="summary-row">
+          <h3>Governance Summary</h3>
+          <ul>
+            {Object.entries(rollup.summary.byGovernanceStatus).map(([status, count]) => (
+              <li key={status}>
+                <strong>{count}</strong> {status.replace(/_/g, " ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="summary-row">
+          <h3>Migration Summary</h3>
+          <ul>
+            {Object.entries(migrationByMode).map(([mode, count]) => (
+              <li key={mode}>
+                <strong>{count}</strong> {mode.replace(/_/g, " ")}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
       <table className="portfolio-table">

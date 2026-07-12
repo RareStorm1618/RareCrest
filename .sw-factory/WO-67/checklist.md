@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-67
 
 **Work Order Number:** WO-67
-**Work Order Title:** WO-67 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:55Z
+**Work Order Title:** Implement AutoCaptureService for runtime corrections and drift (Intelligence Services)
+**Initialized At (UTC):** 2026-07-12T03:24:08Z
 
 ## Phase 1: Start / Context Gathering
 

@@ -3,6 +3,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use uuid::Uuid;
+mod anchored_assessment;
+use anchored_assessment::{
+    compute_anchored_assessment, AnchoredAssessmentRequest, AnchoredAssessmentResult,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScoreDimension {
@@ -84,6 +88,10 @@ async fn score(Json(request): Json<ScoreRequest>) -> Json<ScoreResult> {
     Json(ScoringEngine::compute(&request))
 }
 
+async fn anchored(Json(request): Json<AnchoredAssessmentRequest>) -> Json<AnchoredAssessmentResult> {
+    Json(compute_anchored_assessment(&request))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,7 +118,8 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let app = Router::new()
         .route("/health", get(health))
-        .route("/rpc/score", post(score));
+        .route("/rpc/score", post(score))
+        .route("/rpc/anchored", post(anchored));
 
     let port: u16 = std::env::var("SCORING_PORT")
         .ok()

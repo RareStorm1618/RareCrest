@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-26
 
 **Work Order Number:** WO-26
-**Work Order Title:** WO-26 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:38Z
+**Work Order Title:** Extend ScoringEngine with anchored readiness, DRIVE/SHAPE, and diagnostic computations
+**Initialized At (UTC):** 2026-07-12T03:24:01Z
 
 ## Phase 1: Start / Context Gathering
 
