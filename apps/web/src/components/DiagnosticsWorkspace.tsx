@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReadinessDimension } from "@rarecrest/diagnostics";
 import { TaskDecompositionPanel } from "./TaskDecompositionPanel.js";
+import { RegulatoryProfilePanel } from "./RegulatoryProfilePanel.js";
 
 interface DiagnosticsWorkspaceProps {
   entityId: string;
@@ -149,6 +150,8 @@ export function DiagnosticsWorkspace({
           </p>
         )}
       </header>
+
+      <RegulatoryProfilePanel entityId={entityId} apiBase={apiBase} headers={headers} />
 
       <ol className="run-order">
         {state.runOrder.map((step) => (

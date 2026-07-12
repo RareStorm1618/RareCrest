@@ -75,7 +75,7 @@ export interface EntityState {
   name: string;
   vertical: VerticalKey;
   tenancyKey: string;
-  entityType: EntityType;
+  entityType: EntityType | null;
   isHoldingEntity: boolean;
   mode: string;
   band: string;
@@ -112,10 +112,12 @@ export interface PortfolioEntitySummary {
   id: string;
   name: string;
   vertical: VerticalKey;
-  entityType: EntityType;
+  entityType: EntityType | null;
   isHoldingEntity: boolean;
   mode: string;
   band: string;
+  regulatoryRegimes: string[];
+  regulatoryProfileIncomplete: boolean;
   governanceStatus: GovernanceStatus;
   deploymentLocked: boolean;
   maturityLevel: number;

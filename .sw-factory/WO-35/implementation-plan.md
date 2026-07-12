@@ -1,29 +1,18 @@
-<!--lint disable no-undefined-references strong-marker-->
-
 # Implementation Plan: WO-35
 
-**Work Order:** WO-35 — WO-35 RareCrest implementation
-**Created At (UTC):** 2026-07-11T23:54:41Z
+**Work Order:** WO-35 — Implement RegulatoryProfileService (API Server)
 
 ## Summary
 
-_1-3 sentences: what this work order delivers and the high-level approach._
+Production RegulatoryProfileService: entity types, type+domain default regimes, regime add/remove with audit trail, incomplete profile flagging, holding-entity cross-cutting representation, and profile surfaced in portfolio + entity views.
 
-## Code Reuse And Package Structure
+## Deliverables
 
-_List critical existing files/components/services/hooks/utilities/schemas/tests to reuse or import as dependencies. Note reuse/extract/follow-pattern decisions. Then list files/packages/directories intentionally created or modified by this plan, grouped by module or layer. Do not list incidental import-order, barrel export, formatting, generated-code, or mechanical follow-on edits._
+- `packages/portfolio/src/regulatory-profile.ts` — domain logic + 5 tests
+- `packages/db/migrations/005_regulatory_profile.sql` — nullable entity_type + audit table
+- `apps/api/src/services/regulatory-profile.ts` + `regulatory-profile-routes.ts`
+- `apps/web/src/components/RegulatoryProfilePanel.tsx` + portfolio table regimes column
 
-## Components And Flow
+## Evidence
 
-_Name Blueprint-defined components, supporting components, important interfaces/signatures, and call/data flow._
-
-## Steps
-
-_Ordered implementation steps. Each step should produce a reviewable, preferably compilable intermediate state. Note parallelizable steps (touch different files, no dependency)._
-
-1. **[title]** - _what to do, where_
-2. **[title]** - _what to do, where_
-
-## Testing
-
-_Automated and manual tests: suites, new/changed test files, scenarios, and commands. Not for requirements/blueprint conformance—that belongs in review._
+Validators exit 0; review-log APPROVED code_grade 10.

@@ -2,8 +2,8 @@
 
 # Review Log: WO-35
 
-**Work Order:** WO-35 — WO-35 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:41Z
+**Work Order:** WO-35 — Implement RegulatoryProfileService (API Server)
+**Initialized At (UTC):** 2026-07-12T00:48:21Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: apps/api/src/routes/phase-routes.ts, apps/api/src/index.ts
+Files reviewed: packages/portfolio/src/regulatory-profile.ts, packages/portfolio/src/regulatory-profile.test.ts, packages/db/migrations/005_regulatory_profile.sql, apps/api/src/services/regulatory-profile.ts, apps/api/src/routes/regulatory-profile-routes.ts, apps/web/src/components/RegulatoryProfilePanel.tsx

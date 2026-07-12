@@ -65,11 +65,8 @@ export function registerPortfolioRoutes(app: FastifyInstance, portfolio: Portfol
     const schema = z.object({ regimes: z.array(z.string().min(1)) });
     try {
       const body = schema.parse(request.body);
-      const row = await portfolio.updateRegulatoryProfile(
-        id,
-        body.regimes,
-        request.auth.vertical as VerticalKey,
-      );
+      const scope = isDirectorScope(request.auth, request) ? undefined : request.auth.vertical;
+      const row = await portfolio.updateRegulatoryProfile(id, body.regimes, scope);
       if (!row) return reply.status(404).send({ message: "Entity not found" });
       return reply.send(mapEntityRow(row));
     } catch (err) {

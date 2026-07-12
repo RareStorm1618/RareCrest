@@ -15,6 +15,7 @@
     "@rarecrest/contracts": "workspace:*",
     "@rarecrest/db": "workspace:*",
     "@rarecrest/governance-client": "workspace:*",
+    "@rarecrest/portfolio": "workspace:*",
     "@rarecrest/diagnostics": "workspace:*",
     "@rarecrest/intelligence-client": "workspace:*",
     "fastify": "^5.4.0",

@@ -140,18 +140,7 @@ export function registerPhaseRoutes(
 
   // WO-33: TaskDecompositionMatrix — see task-decomposition-routes.ts (canonical)
 
-  // WO-35: RegulatoryProfileService
-  app.get("/api/v1/entities/:id/regulatory-profile", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const regimes: Record<string, string[]> = {
-      rareangels: ["HIPAA", "HITECH", "GDPR"],
-      rareedge: ["SEC", "AML", "GDPR"],
-      rarestorm: ["IRS-501c3", "Form-990"],
-      hopecoin: ["AML", "Money-Transmission"],
-      healkids: ["COPPA", "HIPAA"],
-    };
-    return reply.send({ entityId: id, vertical: request.auth.vertical, regimes: regimes[request.auth.vertical] ?? [] });
-  });
+  // WO-35: RegulatoryProfileService — see regulatory-profile-routes.ts (canonical)
 
   // WO-36: AttentionFlagService
   app.get("/api/v1/entities/:id/attention-flags", async (request, reply) => {

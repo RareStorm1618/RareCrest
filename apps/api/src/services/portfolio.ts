@@ -5,15 +5,10 @@ import type {
   VerticalKey,
 } from "@rarecrest/contracts";
 import type { DatabaseClient } from "@rarecrest/db";
-
-/** Default regulatory regimes by entity type (AC-PORT-002.2) */
-export const DEFAULT_REGIMES: Record<EntityType, string[]> = {
-  nonprofit: ["IRS-501c3", "Form-990"],
-  for_profit_platform: ["GDPR", "State-Privacy"],
-  fund: ["SEC", "AML"],
-  token_protocol: ["AML", "Money-Transmission"],
-  holding: ["GDPR", "NIST-AI-RMF"],
-};
+import {
+  buildDefaultRegulatoryProfile,
+  isRegulatoryProfileIncomplete,
+} from "@rarecrest/portfolio";
 
 export interface RegisterEntityInput {
   name: string;
@@ -30,7 +25,7 @@ interface EntityRow {
   name: string;
   vertical: VerticalKey;
   tenancy_key: string;
-  entity_type: EntityType;
+  entity_type: EntityType | null;
   is_holding_entity: boolean;
   mode: string;
   band: string;
@@ -59,7 +54,7 @@ export class PortfolioService {
   constructor(private db: DatabaseClient) {}
 
   async registerEntity(input: RegisterEntityInput): Promise<EntityRow> {
-    const regimes = DEFAULT_REGIMES[input.entityType] ?? [];
+    const regimes = buildDefaultRegulatoryProfile(input.entityType, input.vertical);
     const result = await this.db.query<EntityRow>(
       `INSERT INTO rarecrest.entities
          (name, vertical, tenancy_key, entity_type, is_holding_entity, mode, band, regulatory_regimes)
@@ -121,6 +116,8 @@ export class PortfolioService {
         isHoldingEntity: row.is_holding_entity,
         mode: row.mode,
         band: row.band,
+        regulatoryRegimes: row.regulatory_regimes,
+        regulatoryProfileIncomplete: isRegulatoryProfileIncomplete(row.entity_type),
         governanceStatus: row.governance_status,
         deploymentLocked: row.deployment_locked,
         maturityLevel: row.maturity_level,
@@ -159,17 +156,20 @@ export class PortfolioService {
   async updateRegulatoryProfile(
     entityId: string,
     regimes: string[],
-    scopeVertical: VerticalKey,
+    scopeVertical?: VerticalKey,
   ): Promise<EntityRow | null> {
-    const result = await this.db.query<EntityRow>(
-      `UPDATE rarecrest.entities
+    const params: unknown[] = [JSON.stringify(regimes), entityId];
+    let sql = `UPDATE rarecrest.entities
        SET regulatory_regimes = $1, updated_at = NOW()
-       WHERE id = $2 AND vertical = $3 AND deleted_at IS NULL
-       RETURNING id, name, vertical, tenancy_key, entity_type, is_holding_entity, mode, band,
+       WHERE id = $2 AND deleted_at IS NULL`;
+    if (scopeVertical) {
+      sql += " AND vertical = $3";
+      params.push(scopeVertical);
+    }
+    sql += ` RETURNING id, name, vertical, tenancy_key, entity_type, is_holding_entity, mode, band,
                  regulatory_regimes, governance_status, deployment_locked, maturity_level,
-                 assessed_at, created_at, updated_at, deleted_at`,
-      [JSON.stringify(regimes), entityId, scopeVertical],
-    );
+                 assessed_at, created_at, updated_at, deleted_at`;
+    const result = await this.db.query<EntityRow>(sql, params);
     return result.rows[0] ?? null;
   }
 
@@ -238,6 +238,7 @@ export function mapEntityRow(row: EntityRow) {
     mode: row.mode,
     band: row.band,
     regulatoryRegimes: row.regulatory_regimes,
+    regulatoryProfileIncomplete: isRegulatoryProfileIncomplete(row.entity_type),
     governanceStatus: row.governance_status,
     deploymentLocked: row.deployment_locked,
     maturityLevel: row.maturity_level,

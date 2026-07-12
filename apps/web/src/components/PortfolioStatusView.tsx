@@ -47,6 +47,7 @@ export function PortfolioStatusView({ rollup, loading, onSelectEntity }: Portfol
           <tr>
             <th>Entity</th>
             <th>Type</th>
+            <th>Regimes</th>
             <th>Band</th>
             <th>Governance</th>
             <th>Status</th>
@@ -66,7 +67,17 @@ export function PortfolioStatusView({ rollup, loading, onSelectEntity }: Portfol
                 {entity.name}
                 <small>{entity.vertical}</small>
               </td>
-              <td>{entity.entityType}</td>
+              <td>
+                {entity.entityType ?? <span className="incomplete-type">incomplete</span>}
+              </td>
+              <td>
+                {entity.regulatoryProfileIncomplete ? (
+                  <span className="profile-incomplete">incomplete</span>
+                ) : (
+                  entity.regulatoryRegimes.slice(0, 2).join(", ") +
+                  (entity.regulatoryRegimes.length > 2 ? "…" : "")
+                )}
+              </td>
               <td>{entity.band}</td>
               <td>{entity.governanceStatus}</td>
               <td>{entity.stateSummary}</td>
