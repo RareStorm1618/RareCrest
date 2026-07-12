@@ -1,27 +1,28 @@
-import { useEffect, useState } from "react";
-import { RareCrestApiClient } from "@rarecrest/api-client";
+import { useEffect, useMemo, useState } from "react";
 import type { PortfolioRollup } from "@rarecrest/contracts";
 import { DualTrackView, ZeroAuthorityShell } from "@rarecrest/ui";
+import { API_BASE, API_HEADERS, createApiClient } from "./lib/api.js";
+import { parseHash, navigate, type AppRoute } from "./lib/routing.js";
+import { DirectorNav } from "./components/DirectorNav.js";
 import { PortfolioStatusView } from "./components/PortfolioStatusView.js";
 import { DiagnosticsWorkspace } from "./components/DiagnosticsWorkspace.js";
-
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-const API_HEADERS = {
-  "x-user-id": "director-1",
-  "x-user-role": "director",
-  "x-vertical": "holding",
-};
+import { DesignStudioPage } from "./components/DesignStudioPage.js";
+import { MigrationWorkspacePage } from "./components/MigrationWorkspacePage.js";
+import { CompanionPage } from "./components/CompanionPage.js";
 
 export function App() {
+  const [route, setRoute] = useState<AppRoute>(() => parseHash(window.location.hash));
   const [rollup, setRollup] = useState<PortfolioRollup | null>(null);
   const [loading, setLoading] = useState(true);
   const [health, setHealth] = useState("loading");
-  const [selectedEntity, setSelectedEntity] = useState<{ id: string; name: string } | null>(null);
 
-  const client = new RareCrestApiClient({
-    baseUrl: API_BASE,
-    getHeaders: () => API_HEADERS,
-  });
+  const client = useMemo(() => createApiClient(), []);
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   useEffect(() => {
     client.health().then((h) => setHealth(h.status)).catch(() => setHealth("down"));
@@ -30,36 +31,80 @@ export function App() {
       .then(setRollup)
       .catch(() => setRollup(null))
       .finally(() => setLoading(false));
-  }, []);
+  }, [client]);
+
+  const entityId = route.name === "portfolio" ? null : route.entityId;
+  const entityName =
+    entityId && rollup
+      ? (rollup.entities.find((entity) => entity.id === entityId)?.name ?? entityId)
+      : null;
+
+  const selectEntity = (id: string) => {
+    navigate({ name: "diagnostics", entityId: id });
+  };
 
   return (
     <ZeroAuthorityShell>
-      <p className="api-health">API: {health}</p>
-      {selectedEntity ? (
+      <div className="shell-meta">
+        <p className="api-health">API: {health}</p>
+        <DirectorNav route={route} entityId={entityId} entityName={entityName} />
+      </div>
+
+      {route.name === "portfolio" && (
+        <PortfolioStatusView rollup={rollup} loading={loading} onSelectEntity={selectEntity} />
+      )}
+
+      {route.name === "diagnostics" && (
         <DiagnosticsWorkspace
-          entityId={selectedEntity.id}
-          entityName={selectedEntity.name}
+          entityId={route.entityId}
+          entityName={entityName ?? route.entityId}
           apiBase={API_BASE}
           headers={API_HEADERS}
-          onBack={() => setSelectedEntity(null)}
-        />
-      ) : (
-        <PortfolioStatusView
-          rollup={rollup}
-          loading={loading}
-          onSelectEntity={(id) => {
-            const entity = rollup?.entities.find((e) => e.id === id);
-            if (entity) setSelectedEntity({ id, name: entity.name });
-          }}
+          onBack={() => navigate({ name: "portfolio" })}
         />
       )}
+
+      {route.name === "design" && (
+        <DesignStudioPage
+          entityId={route.entityId}
+          entityName={entityName ?? route.entityId}
+          apiBase={API_BASE}
+          headers={API_HEADERS}
+        />
+      )}
+
+      {route.name === "migration" && (
+        <MigrationWorkspacePage
+          entityId={route.entityId}
+          entityName={entityName ?? route.entityId}
+          apiBase={API_BASE}
+          headers={API_HEADERS}
+        />
+      )}
+
+      {route.name === "companion" && (
+        <CompanionPage
+          entityId={route.entityId}
+          entityName={entityName ?? route.entityId}
+          apiBase={API_BASE}
+          headers={API_HEADERS}
+        />
+      )}
+
       <DualTrackView
-        title="Director Surface"
-        narrative="Portfolio roll-up shows every managed entity's readiness band, governance status, and attention flags. Hard rules enforced server-side."
+        title="Director Surface Contract"
+        narrative="Client renders server-owned portfolio, diagnostics, design, migration, and companion state. Navigation is entity-scoped; hard rules and framing guards stay server-side."
         schemaPayload={{
           authority: "none",
-          portfolioScope: "director",
-          features: ["entity-portfolio", "roll-up", "attention-flags"],
+          route: route.name,
+          entityId,
+          features: [
+            "portfolio",
+            "diagnostics",
+            "design-studio",
+            "migration-workspace",
+            "skill-companion",
+          ],
         }}
       />
     </ZeroAuthorityShell>
