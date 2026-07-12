@@ -22,6 +22,7 @@ import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { deriveActivationControls, appendDenyTrace } from "../trust.js";
 import { assertLivePassport, requireHumanInstruction, PolicyGatewayError } from "../policy/index.js";
+import { ParliamentError, ParliamentService, parliamentRequired } from "../services/parliament.js";
 
 const activationControlsSchema = z.object({
   hardRuleClear: z.boolean(),
@@ -37,6 +38,8 @@ export function registerRuntimeRoutes(
   intelligence: IntelligenceClient,
   governance: GovernanceClient,
 ) {
+  const parliament = new ParliamentService(db);
+
   app.get("/api/v1/runtime/agents", async (request, reply) => {
     const q = request.query as { entityId?: string; status?: AgentStatus; health?: AgentHealth };
     const result = await db.query(
@@ -359,6 +362,52 @@ export function registerRuntimeRoutes(
               message: "Financial held-action release requires humanInstructionId on heldAction",
               reviewId: id,
             });
+          }
+
+          // S3 gate: financial_release is a stake-class Parliament may hold, independent of
+          // the humanInstructionId dual-control below. Required whenever parliamentRequired()
+          // (PARLIAMENT_REQUIRED=true, or AUTH_TRUST_MODE=strict unless explicitly disabled).
+          if (parliamentRequired()) {
+            const parliamentSessionId =
+              typeof heldAction.parliamentSessionId === "string" ? heldAction.parliamentSessionId.trim() : "";
+            if (!parliamentSessionId) {
+              await appendDenyTrace(intelligence, {
+                vertical: request.auth.vertical,
+                entityId: pendingRow.entityId as string,
+                action: "held_action_release",
+                reason: "missing_parliament_session_id",
+                route: "/api/v1/runtime/human-review/:id/resolve",
+                statusCode: 403,
+              });
+              return reply.status(403).send({
+                message: "Financial held-action release requires parliamentSessionId on heldAction",
+                reviewId: id,
+              });
+            }
+            try {
+              await parliament.resolveOrSealForAction({
+                sessionId: parliamentSessionId,
+                stakeClass: "financial_release",
+                actorId: request.auth.userId,
+                payload: { reviewId: id, entityId: pendingRow.entityId },
+              });
+            } catch (parliamentErr) {
+              if (parliamentErr instanceof ParliamentError) {
+                await appendDenyTrace(intelligence, {
+                  vertical: request.auth.vertical,
+                  entityId: pendingRow.entityId as string,
+                  action: "held_action_release",
+                  reason: parliamentErr.message,
+                  route: "/api/v1/runtime/human-review/:id/resolve",
+                  statusCode: parliamentErr.statusCode,
+                });
+                return reply.status(parliamentErr.statusCode).send({
+                  message: parliamentErr.message,
+                  reviewId: id,
+                });
+              }
+              throw parliamentErr;
+            }
           }
 
           try {

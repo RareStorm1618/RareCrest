@@ -344,6 +344,17 @@ ul[role="alert"] { color: #ff6b6b; }
 .severity-badge.severity-medium { background: #3d3a1a; color: #fbbf24; }
 .severity-badge.severity-low { background: #1a3d2e; color: #4ade80; }
 
+.attention-budget-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+.attention-budget-badge {
+  background: #1c2230; border: 1px solid #3a4050; color: #b8c0cc; border-radius: 999px;
+  padding: 0.25rem 0.7rem; font-size: 0.78rem; white-space: nowrap;
+}
+.attention-budget-badge.exhausted { background: #3d281a; border-color: #6b4a1a; color: #fb923c; }
+.attention-lane-heading { margin: 1rem 0 0.5rem; color: #b8c0cc; font-size: 0.95rem; }
+.attention-lane-heading.deferred { color: #fbbf24; }
+.attention-queue-list.deferred-list .attention-queue-item { opacity: 0.85; border-left: 3px solid #fbbf24; }
+.attention-queue-item.deferred { background: #171613; }
+
 .entity-register-panel { background: #10141c; border: 1px solid #2a3040; border-radius: 8px; padding: 1rem; margin-top: 1.5rem; }
 .entity-register-panel h3 { margin: 0 0 0.75rem; }
 .entity-register-form {
@@ -468,4 +479,62 @@ ul[role="alert"] { color: #ff6b6b; }
 .human-instructions-list li.expired { border-color: #4a3030; }
 .human-instructions-list small { display: block; color: #6f788a; }
 .status-pill.status-expired { background: #3d1a1a; color: #f87171; }
+
+.officer-role-badge { text-transform: capitalize; color: #e8eaed; }
+.officer-card button { margin-top: 0.25rem; background: #1c2230; border: 1px solid #3a4050; color: #e8eaed; border-radius: 4px; padding: 0.35rem 0.75rem; cursor: pointer; font: inherit; font-size: 0.85rem; width: fit-content; }
+.officer-card button:disabled { opacity: 0.6; cursor: not-allowed; }
+.officer-rights-fieldset { border: 1px solid #2f3648; border-radius: 6px; padding: 0.6rem 0.75rem; margin: 0.5rem 0; display: grid; gap: 0.35rem; }
+.officer-rights-fieldset legend { color: #9aa3b2; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.officer-rights-fieldset small { color: #6f788a; }
+
+.status-pill.status-open { background: #1a2030; color: #9aa3b2; }
+.status-pill.status-ready_for_seal { background: #3d2f1a; color: #fbbf24; }
+.status-pill.status-sealed { background: #1a3d2e; color: #4ade80; }
+.status-pill.status-rejected { background: #3d1a1a; color: #f87171; }
+
+.parliament-panel .parliament-open-form {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem; margin-bottom: 0.85rem;
+}
+.parliament-panel label { display: flex; flex-direction: column; gap: 0.3rem; color: #b8c0cc; font-size: 0.85rem; }
+.parliament-panel input, .parliament-panel select {
+  background: #0f131b; border: 1px solid #2f3648; color: #e8ecf3; border-radius: 4px; padding: 0.5rem 0.65rem; font: inherit;
+}
+.parliament-panel button {
+  background: #4a9eff; border: none; color: #fff; border-radius: 4px; padding: 0.5rem 1rem;
+  cursor: pointer; font: inherit; height: fit-content;
+}
+.parliament-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.parliament-session-list { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.4rem; }
+.parliament-session-list li button {
+  width: 100%; text-align: left; background: #0f131b; border: 1px solid #2f3648; border-radius: 4px;
+  padding: 0.5rem 0.65rem; display: flex; flex-direction: column; gap: 0.15rem; color: #d5dae3;
+}
+.parliament-session-list li.active button { border-color: #4a9eff; }
+.parliament-session-list li button small { color: #6f788a; font-size: 0.75rem; }
+
+.parliament-detail {
+  background: #0f131b; border: 1px solid #2f3648; border-radius: 6px; padding: 0.85rem; display: grid; gap: 0.75rem;
+}
+.parliament-detail h4 { margin: 0; color: #e8eaed; font-size: 0.95rem; }
+.parliament-vote-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; font-size: 0.85rem; color: #d5dae3; }
+.parliament-vote-list em { color: #9aa3b2; font-style: normal; }
+.vote-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 999px; font-size: 0.7rem; }
+.vote-badge.vote-aye { background: #1a3d2e; color: #4ade80; }
+.vote-badge.vote-nay { background: #3d1a1a; color: #f87171; }
+.vote-badge.vote-abstain { background: #1a2030; color: #9aa3b2; }
+
+.parliament-vote-form, .parliament-seal-form {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem;
+  border-top: 1px solid #2a3040; padding-top: 0.75rem;
+}
+.parliament-seal-form .actions { align-items: flex-end; }
+.time-lock-hours input { width: 5rem; }
+
+.parliament-seal-status {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  background: #151821; border: 1px solid #2f3648; border-radius: 4px; padding: 0.5rem 0.65rem; font-size: 0.85rem; color: #d5dae3;
+}
+
+.parliament-session-input { min-width: 260px; }
 

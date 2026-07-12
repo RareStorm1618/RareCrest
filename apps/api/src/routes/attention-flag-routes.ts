@@ -32,6 +32,7 @@ export function registerAttentionFlagRoutes(app: FastifyInstance, db: DatabaseCl
       severity: z.enum(["low", "medium", "high", "critical"]).optional(),
       linkPath: z.string().optional(),
       sourceRef: z.string().optional(),
+      agentId: z.string().min(1).optional(),
     });
     try {
       const body = schema.parse(request.body);

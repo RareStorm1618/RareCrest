@@ -29,6 +29,7 @@ See [`VPS-CUTOVER.md`](./VPS-CUTOVER.md) for the concrete private-VPS deployment
 | Rate limits | Postgres-backed via `rarecrest.api_rate_limits` (`assertDbRateLimit`/`WikiService.assertRateLimitDb`, used by wiki query + autoresearch); falls back to an in-memory bucket when the table/migration is unavailable — fails open on infra gaps, never silently unlimited. |
 | Decision-trace hash chain | Every `decision_traces` row carries `content_hash = sha256(entityId+action+payload)` and `prev_hash` from the entity's prior trace — tamper-evident in addition to the existing append-only DB trigger. |
 | Observability | `GET /metrics` (unauthenticated, like `/health`, no PHI/secrets) exposes Prometheus-ish counters: RPC-unauthorized, PHI-decrypt allow/deny, kill-switch arm/trigger/disarm, auth failures, RBAC denials. |
+| Parliament + Seal | Multi-officer, multi-stakeholder-lens deliberation gate (`rarecrest.parliament_sessions`/`parliament_votes`/`seals`) in front of `wiki_promote`/`financial_release`/`activation`/`doctrine` actions. Required whenever `PARLIAMENT_REQUIRED=true` or `AUTH_TRUST_MODE=strict` (unless explicitly disabled). Sealing is director-only; a red-team `nay` blocks sealing without an explicit `overrideNote`; `time_lock` seals enforce their cooling-off window server-side and are cancellable before they execute. See [`SOLO-ORGANISM.md`](./SOLO-ORGANISM.md) for the full ceremony. |
 
 ## Federated Canon Wiki
 
@@ -83,6 +84,8 @@ See [`VPS-CUTOVER.md`](./VPS-CUTOVER.md) for the concrete private-VPS deployment
 | `PHI_KMS_ENDPOINT` + `PHI_KMS_TOKEN` | Remote KMS broker (`/wrap`, `/unwrap`). |
 | `PHI_MASTER_KEY` | Legacy fallback KEK material in **dev only**; insufficient alone in strict. |
 | `VITE_API_BEARER_TOKEN` / `EXPO_PUBLIC_API_BEARER_TOKEN` | Client Bearer tokens. |
+| `PARLIAMENT_REQUIRED` | `true`/`false` — explicit override for the Parliament + Seal gate. Unset defers to `AUTH_TRUST_MODE=strict`. `false` always wins (dev-loopback opt-out). |
+| `PARLIAMENT_MIN_VOTES` | Distinct `stakeholder_lens` votes required before a Parliament session becomes `ready_for_seal`. Defaults to `2`. |
 
 ## Production cutover checklist
 

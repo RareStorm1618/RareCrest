@@ -2,6 +2,7 @@ import { AuthError, TenancyViolationError } from "./auth.js";
 import { EntityAccessError } from "./tenancy.js";
 import { StepLockedError } from "./services/diagnostics.js";
 import { PolicyGatewayError } from "./policy/index.js";
+import { ParliamentError } from "./services/parliament.js";
 import { recordAuthFailure } from "./observability.js";
 
 export interface RouteErrorResponse {
@@ -22,6 +23,9 @@ export function mapRouteError(err: unknown): RouteErrorResponse | null {
   }
   if (err instanceof PolicyGatewayError) {
     return { status: err.statusCode, body: { message: err.message, code: err.code } };
+  }
+  if (err instanceof ParliamentError) {
+    return { status: err.statusCode, body: { message: err.message } };
   }
   return null;
 }

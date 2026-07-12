@@ -14,6 +14,11 @@ import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { isVerifiedDirector } from "../trust.js";
 import type { AuthContext } from "../auth.js";
+import {
+  listBudgetsForEntities,
+  repossess,
+  type AgentAttentionBudget,
+} from "../services/attention-budget.js";
 
 /** AC-CMD-001: agent_roster activity → morning-brief agent_activity section. */
 export function mapAgentActivity(
@@ -37,6 +42,8 @@ export interface CommandDashboard {
   ranked: PriorityItem[];
   queue: AttentionQueueItem[];
   portfolioClear: boolean;
+  /** S1 Attention Budget Protocol */
+  attentionAuction: AttentionAuction;
 }
 
 /** Postgres-backed director-session upsert (migration 024 adds the unique index on director_id). */
@@ -53,7 +60,8 @@ async function loadAttentionQueue(db: DatabaseClient, vertical?: string): Promis
   const verticalFilter = vertical ? "AND e.vertical = $1" : "";
   const result = await db.query(
     `SELECT af.id, af.entity_id, COALESCE(af.signal_type, af.flag_type) AS signal_type,
-            af.severity, af.message, af.link_path, af.source_ref, af.created_at, e.name AS entity_name
+            af.severity, af.message, af.link_path, af.source_ref, af.created_at, e.name AS entity_name,
+            af.deferred_to_brief, af.agent_id, af.interrupt_paid
      FROM rarecrest.attention_flags af
      JOIN rarecrest.entities e ON e.id = af.entity_id
      WHERE af.resolved_at IS NULL
@@ -75,8 +83,27 @@ async function loadAttentionQueue(db: DatabaseClient, vertical?: string): Promis
       sourceFeature: "portfolio",
       kind: classifyQueueItem(signalType),
       entityName: row.entity_name as string,
+      deferredToBrief: Boolean(row.deferred_to_brief),
+      agentId: (row.agent_id as string | null) ?? null,
+      interruptPaid: row.interrupt_paid === undefined ? true : Boolean(row.interrupt_paid),
     };
   });
+}
+
+export interface AttentionAuction {
+  /** S1 Attention Budget Protocol — the live interrupt lane: deferred_to_brief = FALSE only. */
+  interruptItems: AttentionQueueItem[];
+  deferredCount: number;
+  budgets: AgentAttentionBudget[];
+}
+
+/** S1 Attention Budget Protocol — splits the open queue into the live interrupt auction vs. items deferred to the brief. */
+async function buildAttentionAuction(db: DatabaseClient, queue: AttentionQueueItem[]): Promise<AttentionAuction> {
+  const interruptItems = queue.filter((item) => !item.deferredToBrief);
+  const deferredCount = queue.length - interruptItems.length;
+  const entityIds = Array.from(new Set(queue.map((item) => item.entityId)));
+  const budgets = await listBudgetsForEntities(db, entityIds);
+  return { interruptItems, deferredCount, budgets };
 }
 
 /** Resolve a link for wiki-health items: the holding entity's wiki tab, else `#/command`. */
@@ -201,11 +228,14 @@ export async function buildCommandDashboard(
     await upsertDirectorSession(db, directorId);
   }
 
+  const attentionAuction = await buildAttentionAuction(db, queue);
+
   return {
     brief,
     ranked: rankPriorityItems(queue),
     queue,
     portfolioClear: isPortfolioClear(queue),
+    attentionAuction,
   };
 }
 
@@ -238,6 +268,37 @@ export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) 
         ? rankPriorityItems(filterDecisionItems(dashboard.queue))
         : dashboard.ranked;
     return reply.send({ ranked });
+  });
+
+  /**
+   * S1 Attention Budget Protocol — director ritual: repossess an agent's daily interrupt
+   * tokens (reset spent to 0 and/or set new remaining totals). Director-only, fail-closed.
+   */
+  app.post("/api/v1/command/attention/repossess", async (request, reply) => {
+    if (!isVerifiedDirector(request.auth, request.headers as Record<string, unknown>)) {
+      return reply.status(403).send({ message: "Repossessing attention tokens requires a verified director" });
+    }
+    const schema = z.object({
+      agentId: z.string().min(1),
+      entityId: z.string().uuid(),
+      resetSpent: z.literal(true).optional(),
+      criticalTokens: z.number().int().min(0).optional(),
+      awarenessTokens: z.number().int().min(0).optional(),
+    });
+    try {
+      const body = schema.parse(request.body);
+      const budget = await repossess(db, {
+        agentId: body.agentId,
+        entityId: body.entityId,
+        criticalTokens: body.criticalTokens,
+        awarenessTokens: body.awarenessTokens,
+        resetSpent: body.resetSpent,
+      });
+      return reply.send(budget);
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
   });
 
   app.post("/api/v1/memory/records", async (request, reply) => {

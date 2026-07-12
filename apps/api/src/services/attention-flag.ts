@@ -11,6 +11,7 @@ import {
   validateAttentionSignalType,
   validateRelationshipType,
 } from "@rarecrest/portfolio";
+import { spendInterruptToken } from "./attention-budget.js";
 
 export interface RaiseAttentionInput {
   signalType: AttentionSignalType;
@@ -18,6 +19,15 @@ export interface RaiseAttentionInput {
   severity?: AttentionSeverity;
   linkPath?: string;
   sourceRef?: string;
+  /** S1 Attention Budget Protocol — omit for human-raised flags (always interrupt_paid). */
+  agentId?: string;
+}
+
+/** raiseFlag's return, extended with S1 Attention Budget Protocol outcome. */
+export interface RaisedAttentionItem extends AttentionItem {
+  agentId: string | null;
+  deferredToBrief: boolean;
+  interruptPaid: boolean;
 }
 
 export interface ConsumeUnverifiedClaimInput {
@@ -91,7 +101,14 @@ export class AttentionFlagService {
     );
   }
 
-  async raiseFlag(entityId: string, input: RaiseAttentionInput): Promise<AttentionItem> {
+  /**
+   * S1 Attention Budget Protocol — an agentId spends an interrupt token (critical/high
+   * severity draws from the critical pool, medium/low from awareness). Once an agent's
+   * daily tokens are exhausted the flag is deferred to the morning brief instead of
+   * interrupting now. Human-raised flags (no agentId) always interrupt immediately —
+   * humans don't spend agent attention tokens.
+   */
+  async raiseFlag(entityId: string, input: RaiseAttentionInput): Promise<RaisedAttentionItem> {
     const severity = input.severity ?? defaultSeverityForSignal(input.signalType);
     const result = await this.db.query(
       `INSERT INTO rarecrest.attention_flags
@@ -101,16 +118,43 @@ export class AttentionFlagService {
       [entityId, input.signalType, severity, input.message, input.linkPath ?? null, input.sourceRef ?? null],
     );
     const row = result.rows[0];
-    return buildAttentionItem({
-      id: row.id as string,
-      entityId: row.entity_id as string,
-      signalType: row.signal_type as AttentionSignalType,
-      message: row.message as string,
-      severity: row.severity as AttentionSeverity,
-      linkPath: row.link_path as string | null,
-      sourceRef: row.source_ref as string | null,
-      createdAt: (row.created_at as Date).toISOString(),
-    });
+    const flagId = row.id as string;
+
+    let deferredToBrief = false;
+    let interruptPaid = true;
+    if (input.agentId) {
+      const spend = await spendInterruptToken(this.db, {
+        agentId: input.agentId,
+        entityId,
+        severity,
+        flagId,
+      });
+      deferredToBrief = spend.deferred;
+      interruptPaid = spend.paid;
+    }
+
+    await this.db.query(
+      `UPDATE rarecrest.attention_flags
+       SET deferred_to_brief = $2, interrupt_paid = $3, agent_id = $4
+       WHERE id = $1`,
+      [flagId, deferredToBrief, interruptPaid, input.agentId ?? null],
+    );
+
+    return {
+      ...buildAttentionItem({
+        id: flagId,
+        entityId: row.entity_id as string,
+        signalType: row.signal_type as AttentionSignalType,
+        message: row.message as string,
+        severity: row.severity as AttentionSeverity,
+        linkPath: row.link_path as string | null,
+        sourceRef: row.source_ref as string | null,
+        createdAt: (row.created_at as Date).toISOString(),
+      }),
+      agentId: input.agentId ?? null,
+      deferredToBrief,
+      interruptPaid,
+    };
   }
 
   async resolveFlag(flagId: string, entityId: string): Promise<boolean> {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseClient } from "@rarecrest/db";
-import type { AgentRight } from "@rarecrest/contracts";
+import type { AgentRight, OfficerRole } from "@rarecrest/contracts";
 
 /**
  * Fail-closed gateway errors. Every check in this module throws on the
@@ -38,17 +38,35 @@ interface AgentPassportRow {
   hard_rule_clear: boolean;
 }
 
+export interface AssertLivePassportOptions {
+  /**
+   * When set, the caller is asserting that the agent must currently hold this
+   * officer role for the entity — checked against a live (active) row in
+   * rarecrest.officer_assignments, not merely a passport with matching rights.
+   * A passport can be live while an officer assignment behind it has since
+   * been deactivated/replaced; this closes that gap for officer-gated routes.
+   */
+  requiredOfficerRole?: OfficerRole;
+}
+
+interface OfficerAssignmentCheckRow {
+  id: string;
+}
+
 /**
  * Loads the latest agent_passport for (entityId, agentId) and asserts it is
  * currently live: issued hard-rule-clear AND valid_until still in the future.
+ * When `requiredOfficerRole` is set, also asserts an active officer_assignments
+ * row exists for (entityId, agentId, officerRole) — fail-closed.
  *
- * Fail-closed: no passport, a non-clear passport, or an expired passport
- * all throw PolicyGatewayError(403) — callers must never treat "no evidence"
- * as "allowed".
+ * Fail-closed: no passport, a non-clear passport, an expired passport, or (when
+ * requested) a missing/inactive officer assignment all throw
+ * PolicyGatewayError(403) — callers must never treat "no evidence" as "allowed".
  */
 export async function assertLivePassport(
   db: DatabaseClient,
   input: { entityId: string; agentId: string },
+  options: AssertLivePassportOptions = {},
 ): Promise<LivePassport> {
   const result = await db.query<AgentPassportRow>(
     `SELECT id, agent_id, entity_id, rights, risk_tier, valid_until, hard_rule_clear
@@ -80,6 +98,23 @@ export async function assertLivePassport(
       "PASSPORT_EXPIRED",
     );
   }
+
+  if (options.requiredOfficerRole) {
+    const officerResult = await db.query<OfficerAssignmentCheckRow>(
+      `SELECT id FROM rarecrest.officer_assignments
+       WHERE entity_id = $1 AND agent_id = $2 AND officer_role = $3 AND active = TRUE
+       LIMIT 1`,
+      [input.entityId, input.agentId, options.requiredOfficerRole],
+    );
+    if (officerResult.rows.length === 0) {
+      throw new PolicyGatewayError(
+        `No active officer assignment role=${options.requiredOfficerRole} for agent=${input.agentId} entity=${input.entityId}`,
+        403,
+        "OFFICER_ASSIGNMENT_MISSING",
+      );
+    }
+  }
+
   return {
     id: row.id,
     agentId: row.agent_id,

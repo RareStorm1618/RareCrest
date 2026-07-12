@@ -42,6 +42,8 @@ import { registerWikiRoutes } from "./routes/wiki-routes.js";
 import { registerJobsRoutes } from "./routes/jobs-routes.js";
 import { registerHumanInstructionRoutes } from "./routes/human-instruction-routes.js";
 import { registerOpsRoutes } from "./routes/ops-routes.js";
+import { registerOfficerRoutes } from "./routes/officer-routes.js";
+import { registerParliamentRoutes } from "./routes/parliament-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import {
@@ -133,6 +135,8 @@ export async function buildApp() {
   registerJobsRoutes(app, db, intelligence);
   registerHumanInstructionRoutes(app, db);
   registerOpsRoutes(app, db);
+  registerOfficerRoutes(app, db, governance, intelligence);
+  registerParliamentRoutes(app, db, intelligence);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

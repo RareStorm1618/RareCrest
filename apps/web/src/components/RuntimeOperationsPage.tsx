@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import type { AgentRight, OfficerRole, OfficerRoleTemplate } from "@rarecrest/contracts";
+import { ParliamentPanel } from "./ParliamentPanel";
 
 interface RuntimeOperationsPageProps {
   entityId: string;
@@ -57,7 +59,20 @@ interface HumanInstructionRow {
   createdAt: string;
 }
 
+interface OfficerAssignmentRow {
+  id: string;
+  entityId: string;
+  officerRole: OfficerRole;
+  agentId: string;
+  active: boolean;
+  issuedPassportId: string | null;
+  assignedBy: string;
+  createdAt: string;
+}
+
 type KillSwitchAction = "arm" | "trigger" | "disarm";
+
+const ALL_AGENT_RIGHTS: AgentRight[] = ["sensitive_data", "code_execution", "external_comms"];
 
 function formatRelativeToNow(iso: string): string {
   const diffMs = new Date(iso).getTime() - Date.now();
@@ -91,6 +106,16 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
   const [instructionBusy, setInstructionBusy] = useState(false);
   const [instructionError, setInstructionError] = useState<string | null>(null);
   const [instructionStatus, setInstructionStatus] = useState<string | null>(null);
+
+  const [officerTemplates, setOfficerTemplates] = useState<Partial<Record<OfficerRole, OfficerRoleTemplate>>>({});
+  const [officerAssignments, setOfficerAssignments] = useState<OfficerAssignmentRow[]>([]);
+  const [officerAssignmentsUnavailable, setOfficerAssignmentsUnavailable] = useState(false);
+  const [officerRole, setOfficerRole] = useState<OfficerRole | "">("");
+  const [officerAgentId, setOfficerAgentId] = useState("");
+  const [officerRights, setOfficerRights] = useState<AgentRight[]>([]);
+  const [officerBusy, setOfficerBusy] = useState(false);
+  const [officerError, setOfficerError] = useState<string | null>(null);
+  const [officerStatus, setOfficerStatus] = useState<string | null>(null);
 
   const jsonHeaders = { ...headers, "Content-Type": "application/json" };
 
@@ -154,6 +179,104 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
   useEffect(() => {
     loadHumanInstructions();
   }, [loadHumanInstructions]);
+
+  const loadOfficers = useCallback(async () => {
+    try {
+      const [templatesRes, assignmentsRes] = await Promise.all([
+        fetch(`${apiBase}/api/v1/runtime/officers/templates`, { headers }),
+        fetch(`${apiBase}/api/v1/runtime/entities/${entityId}/officers`, { headers }),
+      ]);
+      if (templatesRes.status === 404 || assignmentsRes.status === 404) {
+        setOfficerAssignmentsUnavailable(true);
+        return;
+      }
+      if (templatesRes.ok) {
+        const data = (await templatesRes.json()) as { templates: Record<OfficerRole, OfficerRoleTemplate> };
+        setOfficerTemplates(data.templates ?? {});
+      }
+      if (assignmentsRes.ok) {
+        const data = (await assignmentsRes.json()) as { assignments: OfficerAssignmentRow[] };
+        setOfficerAssignments(data.assignments ?? []);
+      }
+      setOfficerAssignmentsUnavailable(false);
+    } catch {
+      setOfficerAssignmentsUnavailable(true);
+    }
+  }, [apiBase, entityId, headers]);
+
+  useEffect(() => {
+    loadOfficers();
+  }, [loadOfficers]);
+
+  const selectedOfficerTemplate = officerRole ? officerTemplates[officerRole] : undefined;
+
+  const chooseOfficerRole = (role: OfficerRole | "") => {
+    setOfficerRole(role);
+    const template = role ? officerTemplates[role] : undefined;
+    setOfficerRights(template ? [...template.maxRights] : []);
+  };
+
+  const toggleOfficerRight = (right: AgentRight) => {
+    setOfficerRights((prev) => (prev.includes(right) ? prev.filter((r) => r !== right) : [...prev, right]));
+  };
+
+  const assignOfficer = async () => {
+    if (!officerRole || !officerAgentId.trim()) return;
+    setOfficerBusy(true);
+    setOfficerError(null);
+    setOfficerStatus(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/runtime/officers/assign`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          entityId,
+          officerRole,
+          agentId: officerAgentId.trim(),
+          requestedRights: officerRights,
+        }),
+      });
+      if (res.status === 404) {
+        setOfficerAssignmentsUnavailable(true);
+        setOfficerError("Officer assignment API is not deployed yet");
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? "Officer assignment failed");
+      }
+      setOfficerStatus(`Officer role ${officerRole} assigned to ${officerAgentId.trim()}`);
+      setOfficerAgentId("");
+      chooseOfficerRole("");
+      await loadOfficers();
+    } catch (err) {
+      setOfficerError(err instanceof Error ? err.message : "Officer assignment failed");
+    } finally {
+      setOfficerBusy(false);
+    }
+  };
+
+  const deactivateOfficer = async (assignmentId: string) => {
+    setOfficerBusy(true);
+    setOfficerError(null);
+    setOfficerStatus(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/runtime/officers/${assignmentId}/deactivate`, {
+        method: "POST",
+        headers: jsonHeaders,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? "Officer deactivation failed");
+      }
+      setOfficerStatus("Officer assignment deactivated");
+      await loadOfficers();
+    } catch (err) {
+      setOfficerError(err instanceof Error ? err.message : "Officer deactivation failed");
+    } finally {
+      setOfficerBusy(false);
+    }
+  };
 
   const createHumanInstruction = async () => {
     if (!actionScope.trim() || !instruction.trim()) return;
@@ -526,6 +649,104 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
           </ul>
         )}
       </div>
+
+      <div className="runtime-section" data-testid="officers-panel">
+        <h3>Officer passports</h3>
+        <p className="phi-note">
+          Director-assigned officer roles — each role caps requestable rights at a pre-shaped
+          template ceiling, always within the two-of-three rights rule.
+        </p>
+
+        {officerAssignmentsUnavailable ? (
+          <p className="wiki-empty">Officer assignment API is not deployed yet.</p>
+        ) : (
+          <>
+            {officerAssignments.length === 0 ? (
+              <p className="wiki-empty">No officer roles assigned for this entity.</p>
+            ) : (
+              <div className="runtime-card-grid">
+                {officerAssignments.map((assignment) => (
+                  <div key={assignment.id} className="runtime-card officer-card">
+                    <strong className="officer-role-badge">{assignment.officerRole.replace(/_/g, " ")}</strong>
+                    <span>{assignment.agentId}</span>
+                    <span className={`status-pill ${assignment.active ? "status-running" : "status-halted"}`}>
+                      {assignment.active ? "active" : "inactive"}
+                    </span>
+                    <small>assigned by {assignment.assignedBy}</small>
+                    {assignment.active && (
+                      <button type="button" onClick={() => deactivateOfficer(assignment.id)} disabled={officerBusy}>
+                        Deactivate
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <label>
+              Officer role
+              <select
+                value={officerRole}
+                onChange={(e) => chooseOfficerRole(e.target.value as OfficerRole | "")}
+                disabled={officerBusy}
+              >
+                <option value="">Select a role…</option>
+                {(Object.keys(officerTemplates) as OfficerRole[]).map((role) => (
+                  <option key={role} value={role}>
+                    {role.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Agent ID
+              <input
+                value={officerAgentId}
+                onChange={(e) => setOfficerAgentId(e.target.value)}
+                placeholder="agent identifier"
+                disabled={officerBusy}
+              />
+            </label>
+            {selectedOfficerTemplate && (
+              <fieldset className="officer-rights-fieldset">
+                <legend>Rights (max 2, capped by template)</legend>
+                {ALL_AGENT_RIGHTS.filter((right) => selectedOfficerTemplate.maxRights.includes(right)).map(
+                  (right) => (
+                    <label key={right} className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={officerRights.includes(right)}
+                        onChange={() => toggleOfficerRight(right)}
+                        disabled={officerBusy}
+                      />
+                      {right.replace(/_/g, " ")}
+                    </label>
+                  ),
+                )}
+                {selectedOfficerTemplate.maxRights.length === 0 && <small>This role has no assignable rights.</small>}
+                <small>
+                  phiBlind: {String(selectedOfficerTemplate.phiBlind)} · financialPrepOnly:{" "}
+                  {String(selectedOfficerTemplate.financialPrepOnly)} · mayExecuteProduction:{" "}
+                  {String(selectedOfficerTemplate.mayExecuteProduction)}
+                </small>
+              </fieldset>
+            )}
+            <div className="actions">
+              <button type="button" onClick={assignOfficer} disabled={officerBusy || !officerRole || !officerAgentId.trim()}>
+                Assign officer
+              </button>
+            </div>
+            {officerStatus && <p className="wiki-status">{officerStatus}</p>}
+            {officerError && (
+              <p className="wiki-error" role="alert">
+                {officerError}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      <ParliamentPanel entityId={entityId} apiBase={apiBase} headers={headers} />
     </section>
   );
 }

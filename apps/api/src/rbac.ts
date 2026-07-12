@@ -9,7 +9,13 @@ export type AppRole =
   | "human"
   | "admin";
 
-export type GatedAction = "kill_switch" | "phi_decrypt" | "vault_package" | "promote" | "export";
+export type GatedAction =
+  | "kill_switch"
+  | "phi_decrypt"
+  | "vault_package"
+  | "promote"
+  | "export"
+  | "officer_assign";
 
 const ACTION_ROLES: Record<GatedAction, ReadonlySet<AppRole>> = {
   kill_switch: new Set(["director", "operator", "admin"]),
@@ -17,6 +23,8 @@ const ACTION_ROLES: Record<GatedAction, ReadonlySet<AppRole>> = {
   vault_package: new Set(["director"]),
   promote: new Set(["director", "admin"]),
   export: new Set(["director", "operator", "compliance_officer", "admin"]),
+  /** S2 Officer Passports — assignment/deactivation is director-only, no operator/admin carve-out. */
+  officer_assign: new Set(["director"]),
 };
 
 const KNOWN_ROLES = new Set<AppRole>([

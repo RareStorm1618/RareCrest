@@ -8,6 +8,10 @@ export interface AttentionQueueItem extends AttentionItem {
   sourceFeature: string;
   kind: QueueItemKind;
   entityName?: string;
+  /** S1 Attention Budget Protocol — deferred items wait for the morning brief instead of interrupting now. */
+  deferredToBrief?: boolean;
+  agentId?: string | null;
+  interruptPaid?: boolean;
 }
 
 export interface MorningBriefSection {
@@ -120,3 +124,16 @@ export interface SharedMemoryRecord {
   tags: string[];
   createdAt: string;
 }
+
+/** S1 Attention Budget Protocol */
+export {
+  applySpend,
+  dailyDefaults,
+  hasTokenAvailable,
+  remainingTokens,
+  tokenKindForSeverity,
+  type AttentionBudgetDefaults,
+  type AttentionBudgetRemaining,
+  type AttentionBudgetRow,
+  type AttentionTokenKind,
+} from "./attention-budget.js";

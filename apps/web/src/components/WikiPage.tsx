@@ -65,6 +65,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
   const [busy, setBusy] = useState(false);
 
   const [directorOpen, setDirectorOpen] = useState(false);
+  const [parliamentSessionId, setParliamentSessionId] = useState("");
 
   const [bridgeFromVertical, setBridgeFromVertical] = useState<string>(vertical);
   const [bridgeToVertical, setBridgeToVertical] = useState<string>("holding");
@@ -251,6 +252,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
           vertical: activeVertical,
           slug: selectedSlug,
           reason: "Director promote from Wiki Companion",
+          parliamentSessionId: parliamentSessionId.trim() || undefined,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -548,9 +550,19 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
               Doctor
             </button>
             {!isAgentRole && (
-              <button type="button" disabled={busy || !selectedSlug} onClick={runPromote}>
-                Promote
-              </button>
+              <>
+                <input
+                  className="parliament-session-input"
+                  value={parliamentSessionId}
+                  onChange={(e) => setParliamentSessionId(e.target.value)}
+                  placeholder="Parliament session id (if required)"
+                  disabled={busy}
+                  aria-label="Parliament session id"
+                />
+                <button type="button" disabled={busy || !selectedSlug} onClick={runPromote}>
+                  Promote
+                </button>
+              </>
             )}
             <button type="button" disabled={busy} onClick={runIngestTraces}>
               Sync traces

@@ -49,6 +49,26 @@ interface AttentionQueueItem {
   createdAt: string;
   sourceFeature: string;
   kind: "decision" | "awareness";
+  deferredToBrief?: boolean;
+  agentId?: string | null;
+  interruptPaid?: boolean;
+}
+
+interface AgentAttentionBudget {
+  id: string;
+  agentId: string;
+  entityId: string;
+  day: string;
+  criticalTokens: number;
+  awarenessTokens: number;
+  criticalSpent: number;
+  awarenessSpent: number;
+}
+
+interface AttentionAuction {
+  interruptItems: AttentionQueueItem[];
+  deferredCount: number;
+  budgets: AgentAttentionBudget[];
 }
 
 interface CommandDashboardResponse {
@@ -56,6 +76,7 @@ interface CommandDashboardResponse {
   ranked: PriorityItem[];
   queue: AttentionQueueItem[];
   portfolioClear: boolean;
+  attentionAuction?: AttentionAuction;
 }
 
 interface BackupStatus {
@@ -84,6 +105,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
   const [priorities, setPriorities] = useState<PriorityItem[]>([]);
   const [queue, setQueue] = useState<AttentionQueueItem[]>([]);
   const [portfolioClear, setPortfolioClear] = useState(true);
+  const [attentionAuction, setAttentionAuction] = useState<AttentionAuction | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
@@ -100,6 +122,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
         setPriorities(data.ranked ?? []);
         setQueue(data.queue ?? []);
         setPortfolioClear(data.portfolioClear ?? true);
+        setAttentionAuction(data.attentionAuction ?? null);
         return;
       }
       if (dashboardRes.status !== 404) {
@@ -121,6 +144,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
       setPriorities(prioritiesData.ranked ?? []);
       setQueue(queueData.items ?? []);
       setPortfolioClear(briefData.portfolioClear ?? queueData.portfolioClear);
+      setAttentionAuction(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load command center");
     } finally {
@@ -307,32 +331,124 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
               <span>{severity}</span>
             </div>
           ))}
+          {attentionAuction && (
+            <div className="stat" data-testid="deferred-count-stat">
+              <strong>{attentionAuction.deferredCount}</strong>
+              <span>Deferred to brief</span>
+            </div>
+          )}
         </div>
-        <ul className="attention-queue-list">
-          {queue.map((item) => (
-            <li key={item.id} className="attention-queue-item" data-testid="attention-queue-item">
-              <span className={`severity-badge severity-${item.severity}`}>{item.severity}</span>
-              <div className="attention-queue-body">
-                <strong>{item.entityName ?? item.entityId}</strong>
-                <span className="attention-queue-message">{item.message}</span>
-                <small>{item.kind}</small>
-              </div>
-              <div className="attention-queue-actions">
-                <button type="button" onClick={() => goToLink(item.linkPath, item.entityId)}>
-                  View
-                </button>
-                <button
-                  type="button"
-                  onClick={() => resolveFlag(item)}
-                  disabled={resolvingId === item.id}
+
+        {attentionAuction && attentionAuction.budgets.length > 0 && (
+          <div className="attention-budget-badges" data-testid="attention-budget-badges">
+            {attentionAuction.budgets.map((budget) => {
+              const criticalRemaining = Math.max(0, budget.criticalTokens - budget.criticalSpent);
+              const awarenessRemaining = Math.max(0, budget.awarenessTokens - budget.awarenessSpent);
+              const exhausted = criticalRemaining === 0 && awarenessRemaining === 0;
+              return (
+                <span
+                  key={budget.id}
+                  className={`attention-budget-badge ${exhausted ? "exhausted" : ""}`}
+                  title={`${budget.agentId} — critical ${criticalRemaining}/${budget.criticalTokens}, awareness ${awarenessRemaining}/${budget.awarenessTokens}`}
                 >
-                  {resolvingId === item.id ? "Resolving…" : "Resolve"}
-                </button>
-              </div>
-            </li>
-          ))}
-          {queue.length === 0 && <li className="wiki-empty">No open attention signals</li>}
-        </ul>
+                  {budget.agentId}: {criticalRemaining}⚡/{awarenessRemaining}ⓘ
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {attentionAuction ? (
+          <>
+            <h4 className="attention-lane-heading">Interrupt lane ({attentionAuction.interruptItems.length})</h4>
+            <ul className="attention-queue-list">
+              {attentionAuction.interruptItems.map((item) => (
+                <li key={item.id} className="attention-queue-item" data-testid="attention-queue-item">
+                  <span className={`severity-badge severity-${item.severity}`}>{item.severity}</span>
+                  <div className="attention-queue-body">
+                    <strong>{item.entityName ?? item.entityId}</strong>
+                    <span className="attention-queue-message">{item.message}</span>
+                    <small>
+                      {item.kind}
+                      {item.agentId ? ` · ${item.agentId}` : ""}
+                    </small>
+                  </div>
+                  <div className="attention-queue-actions">
+                    <button type="button" onClick={() => goToLink(item.linkPath, item.entityId)}>
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => resolveFlag(item)}
+                      disabled={resolvingId === item.id}
+                    >
+                      {resolvingId === item.id ? "Resolving…" : "Resolve"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+              {attentionAuction.interruptItems.length === 0 && (
+                <li className="wiki-empty">No open attention signals</li>
+              )}
+            </ul>
+
+            {attentionAuction.deferredCount > 0 && (
+              <>
+                <h4 className="attention-lane-heading deferred" data-testid="deferred-lane-heading">
+                  Deferred to brief ({attentionAuction.deferredCount})
+                </h4>
+                <ul className="attention-queue-list deferred-list">
+                  {queue
+                    .filter((item) => item.deferredToBrief)
+                    .map((item) => (
+                      <li key={item.id} className="attention-queue-item deferred" data-testid="deferred-queue-item">
+                        <span className={`severity-badge severity-${item.severity}`}>{item.severity}</span>
+                        <div className="attention-queue-body">
+                          <strong>{item.entityName ?? item.entityId}</strong>
+                          <span className="attention-queue-message">{item.message}</span>
+                          <small>
+                            {item.kind}
+                            {item.agentId ? ` · ${item.agentId} · budget exhausted` : ""}
+                          </small>
+                        </div>
+                        <div className="attention-queue-actions">
+                          <button type="button" onClick={() => goToLink(item.linkPath, item.entityId)}>
+                            View
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              </>
+            )}
+          </>
+        ) : (
+          <ul className="attention-queue-list">
+            {queue.map((item) => (
+              <li key={item.id} className="attention-queue-item" data-testid="attention-queue-item">
+                <span className={`severity-badge severity-${item.severity}`}>{item.severity}</span>
+                <div className="attention-queue-body">
+                  <strong>{item.entityName ?? item.entityId}</strong>
+                  <span className="attention-queue-message">{item.message}</span>
+                  <small>{item.kind}</small>
+                </div>
+                <div className="attention-queue-actions">
+                  <button type="button" onClick={() => goToLink(item.linkPath, item.entityId)}>
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => resolveFlag(item)}
+                    disabled={resolvingId === item.id}
+                  >
+                    {resolvingId === item.id ? "Resolving…" : "Resolve"}
+                  </button>
+                </div>
+              </li>
+            ))}
+            {queue.length === 0 && <li className="wiki-empty">No open attention signals</li>}
+          </ul>
+        )}
       </div>
     </section>
   );

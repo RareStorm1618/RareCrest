@@ -12,6 +12,7 @@ import { formatZodErrors, verticalSchema } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { isVerifiedDirector } from "../trust.js";
 import { WikiError, WikiService } from "../services/wiki.js";
+import { ParliamentError, ParliamentService, parliamentRequired } from "../services/parliament.js";
 
 const ENTITY_NS = /^entity\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/working$/i;
 
@@ -60,11 +61,13 @@ function mapWikiErr(err: unknown, reply: { status: (n: number) => { send: (b: un
   if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
   if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
   if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
+  if (err instanceof ParliamentError) return reply.status(err.statusCode).send({ message: err.message });
   throw err;
 }
 
 export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
   const wiki = new WikiService(db);
+  const parliament = new ParliamentService(db);
 
   app.get("/api/v1/wiki/charters", async (_request, reply) => {
     return reply.send({ charters: VERTICAL_CHARTERS });
@@ -307,11 +310,32 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       vertical: verticalSchema,
       slug: z.string().min(1),
       reason: z.string().min(1),
+      parliamentSessionId: z.string().uuid().optional(),
     });
     try {
       enforceVerb("promote", request.auth, request.headers as never);
       const body = schema.parse(request.body);
       await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
+
+      // S3 gate: wiki_promote is a stake-class Parliament may hold. Required whenever
+      // parliamentRequired() (PARLIAMENT_REQUIRED=true, or AUTH_TRUST_MODE=strict unless
+      // explicitly disabled) — a sealed or ready-for-seal session for this same namespace/slug
+      // must exist. `ready_for_seal` auto-seals `immediate` inline with the promoting director.
+      if (parliamentRequired()) {
+        if (!body.parliamentSessionId) {
+          throw new ParliamentError(
+            "Parliament session required to promote (PARLIAMENT_REQUIRED=true or AUTH_TRUST_MODE=strict)",
+            403,
+          );
+        }
+        await parliament.resolveOrSealForAction({
+          sessionId: body.parliamentSessionId,
+          stakeClass: "wiki_promote",
+          actorId: request.auth.userId,
+          payload: { namespace: body.namespace, slug: body.slug },
+        });
+      }
+
       const charter = wiki.charter(body.vertical);
       const result = await wiki.promote({
         namespace: body.namespace,
