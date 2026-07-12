@@ -71,18 +71,55 @@ interface AttentionAuction {
   budgets: AgentAttentionBudget[];
 }
 
+/** EXO Wave A — Parliament + Seal deliberation queue. */
+interface GovernanceQueueSession {
+  id: string;
+  entityId: string;
+  entityName: string;
+  topic: string;
+  stakeClass: string;
+  status: string;
+  createdAt: string;
+}
+
+interface GovernanceQueueSealDue {
+  id: string;
+  sessionId: string;
+  entityId: string;
+  entityName: string;
+  executeAfter: string;
+}
+
+interface GovernanceQueue {
+  openSessions: GovernanceQueueSession[];
+  readyForSeal: GovernanceQueueSession[];
+  sealsDue: GovernanceQueueSealDue[];
+}
+
 interface CommandDashboardResponse {
   brief: MorningBrief;
   ranked: PriorityItem[];
   queue: AttentionQueueItem[];
   portfolioClear: boolean;
   attentionAuction?: AttentionAuction;
+  governanceQueue?: GovernanceQueue;
 }
 
 interface BackupStatus {
   walArchiving: boolean;
   databaseHealthy: boolean;
   lastChecklist: string;
+  generatedAt: string;
+}
+
+/** EXO Wave B — North Star holding metrics, trailing 30-day aggregate. */
+interface NorthStarSummary {
+  windowDays: number;
+  capitalRoutedUsd: number;
+  healingHours: number;
+  familiesSupported: number;
+  donationPctBpsAvg: number;
+  dualMissionScore: number;
   generatedAt: string;
 }
 
@@ -106,10 +143,12 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
   const [queue, setQueue] = useState<AttentionQueueItem[]>([]);
   const [portfolioClear, setPortfolioClear] = useState(true);
   const [attentionAuction, setAttentionAuction] = useState<AttentionAuction | null>(null);
+  const [governanceQueue, setGovernanceQueue] = useState<GovernanceQueue | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
+  const [northStar, setNorthStar] = useState<NorthStarSummary | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,6 +162,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
         setQueue(data.queue ?? []);
         setPortfolioClear(data.portfolioClear ?? true);
         setAttentionAuction(data.attentionAuction ?? null);
+        setGovernanceQueue(data.governanceQueue ?? null);
         return;
       }
       if (dashboardRes.status !== 404) {
@@ -145,6 +185,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
       setQueue(queueData.items ?? []);
       setPortfolioClear(briefData.portfolioClear ?? queueData.portfolioClear);
       setAttentionAuction(null);
+      setGovernanceQueue(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load command center");
     } finally {
@@ -166,10 +207,24 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
     }
   }, [apiBase, headers]);
 
+  const loadNorthStar = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/v1/holding/north-star`, { headers });
+      if (!res.ok) {
+        setNorthStar(null);
+        return;
+      }
+      setNorthStar((await res.json()) as NorthStarSummary);
+    } catch {
+      setNorthStar(null);
+    }
+  }, [apiBase, headers]);
+
   useEffect(() => {
     load();
     loadOpsStatus();
-  }, [load, loadOpsStatus]);
+    loadNorthStar();
+  }, [load, loadOpsStatus, loadNorthStar]);
 
   const rememberIfKnown = useCallback(
     (entityId: string | null) => {
@@ -247,6 +302,99 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
           <span className={`ops-badge ${backupStatus.walArchiving ? "ok" : "down"}`}>
             WAL {backupStatus.walArchiving ? "archiving" : "off"}
           </span>
+        </div>
+      )}
+
+      {northStar && (
+        <div className="command-section-block north-star-card" data-testid="north-star-card">
+          <h3>North Star</h3>
+          <div className="north-star-grid">
+            <div className="stat">
+              <strong>${northStar.capitalRoutedUsd.toLocaleString()}</strong>
+              <span>Capital routed ({northStar.windowDays}d)</span>
+            </div>
+            <div className="stat">
+              <strong>{northStar.healingHours.toLocaleString()}</strong>
+              <span>Healing hours</span>
+            </div>
+            <div className="stat">
+              <strong>{northStar.familiesSupported.toLocaleString()}</strong>
+              <span>Families supported</span>
+            </div>
+            <div className="stat">
+              <strong>{(northStar.donationPctBpsAvg / 100).toFixed(2)}%</strong>
+              <span>Avg. donation %</span>
+            </div>
+            <div className="stat north-star-score">
+              <strong>{northStar.dualMissionScore.toFixed(1)}</strong>
+              <span>Dual-mission score / 100</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {governanceQueue && (
+        <div className="command-section-block" data-testid="governance-queue">
+          <h3>Governance queue</h3>
+          <div className="governance-queue-groups">
+            <div className="governance-queue-group">
+              <h4>Open sessions ({governanceQueue.openSessions.length})</h4>
+              <div className="command-card-grid">
+                {governanceQueue.openSessions.map((session) => (
+                  <button
+                    key={session.id}
+                    type="button"
+                    className="command-card governance-card"
+                    onClick={() => goToLink(`#/entities/${session.entityId}/runtime`, session.entityId)}
+                  >
+                    <span className="command-card-label">{session.topic}</span>
+                    <small>
+                      {session.stakeClass} · {session.entityName}
+                    </small>
+                  </button>
+                ))}
+                {governanceQueue.openSessions.length === 0 && <p className="wiki-empty">None open</p>}
+              </div>
+            </div>
+
+            <div className="governance-queue-group">
+              <h4>Ready for seal ({governanceQueue.readyForSeal.length})</h4>
+              <div className="command-card-grid">
+                {governanceQueue.readyForSeal.map((session) => (
+                  <button
+                    key={session.id}
+                    type="button"
+                    className="command-card governance-card ready-for-seal"
+                    onClick={() => goToLink(`#/entities/${session.entityId}/runtime`, session.entityId)}
+                  >
+                    <span className="command-card-label">{session.topic}</span>
+                    <small>
+                      {session.stakeClass} · {session.entityName}
+                    </small>
+                  </button>
+                ))}
+                {governanceQueue.readyForSeal.length === 0 && <p className="wiki-empty">None awaiting seal</p>}
+              </div>
+            </div>
+
+            <div className="governance-queue-group">
+              <h4>Seals due within 24h ({governanceQueue.sealsDue.length})</h4>
+              <div className="command-card-grid">
+                {governanceQueue.sealsDue.map((seal) => (
+                  <button
+                    key={seal.id}
+                    type="button"
+                    className="command-card governance-card seal-due"
+                    onClick={() => goToLink(`#/entities/${seal.entityId}/runtime`, seal.entityId)}
+                  >
+                    <span className="command-card-label">{seal.entityName}</span>
+                    <small>due {new Date(seal.executeAfter).toLocaleString()}</small>
+                  </button>
+                ))}
+                {governanceQueue.sealsDue.length === 0 && <p className="wiki-empty">None due</p>}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

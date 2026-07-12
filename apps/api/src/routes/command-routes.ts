@@ -44,6 +44,8 @@ export interface CommandDashboard {
   portfolioClear: boolean;
   /** S1 Attention Budget Protocol */
   attentionAuction: AttentionAuction;
+  /** EXO Wave A: Parliament + Seal deliberation queue — see loadGovernanceQueue. */
+  governanceQueue: GovernanceQueue;
 }
 
 /** Postgres-backed director-session upsert (migration 024 adds the unique index on director_id). */
@@ -168,6 +170,107 @@ async function loadWikiHealth(db: DatabaseClient): Promise<WikiHealthBundle> {
   }
 }
 
+export interface GovernanceQueueSession {
+  id: string;
+  entityId: string;
+  entityName: string;
+  topic: string;
+  stakeClass: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface GovernanceQueueSealDue {
+  id: string;
+  sessionId: string;
+  entityId: string;
+  entityName: string;
+  executeAfter: string;
+}
+
+export interface GovernanceQueue {
+  openSessions: GovernanceQueueSession[];
+  readyForSeal: GovernanceQueueSession[];
+  sealsDue: GovernanceQueueSealDue[];
+}
+
+const EMPTY_GOVERNANCE_QUEUE: GovernanceQueue = { openSessions: [], readyForSeal: [], sealsDue: [] };
+
+function mapGovernanceSession(row: Record<string, unknown>): GovernanceQueueSession {
+  return {
+    id: String(row.id),
+    entityId: String(row.entityId),
+    entityName: String(row.entityName ?? row.entityId),
+    topic: String(row.topic),
+    stakeClass: String(row.stakeClass),
+    status: String(row.status),
+    createdAt: (row.createdAt as Date | string) instanceof Date
+      ? (row.createdAt as Date).toISOString()
+      : String(row.createdAt),
+  };
+}
+
+/**
+ * EXO Wave A — Parliament + Seal deliberation queue for the Command Center: open sessions
+ * awaiting more votes, sessions ready_for_seal awaiting the director's signature, and
+ * time-locked seals whose cooling-off window closes within 24h. Best-effort (Parliament
+ * tables may be absent in older environments, same posture as loadWikiHealth).
+ */
+async function loadGovernanceQueue(db: DatabaseClient, vertical?: string): Promise<GovernanceQueue> {
+  try {
+    const verticalFilter = vertical ? "AND e.vertical = $1" : "";
+    const params = vertical ? [vertical] : [];
+    const [openRows, readyRows, sealRows] = await Promise.all([
+      db.query(
+        `SELECT ps.id, ps.entity_id AS "entityId", e.name AS "entityName", ps.topic,
+                ps.stake_class AS "stakeClass", ps.status, ps.created_at AS "createdAt"
+         FROM rarecrest.parliament_sessions ps
+         JOIN rarecrest.entities e ON e.id = ps.entity_id
+         WHERE ps.status = 'open' ${verticalFilter}
+         ORDER BY ps.created_at DESC LIMIT 10`,
+        params,
+      ),
+      db.query(
+        `SELECT ps.id, ps.entity_id AS "entityId", e.name AS "entityName", ps.topic,
+                ps.stake_class AS "stakeClass", ps.status, ps.created_at AS "createdAt"
+         FROM rarecrest.parliament_sessions ps
+         JOIN rarecrest.entities e ON e.id = ps.entity_id
+         WHERE ps.status = 'ready_for_seal' ${verticalFilter}
+         ORDER BY ps.created_at DESC LIMIT 10`,
+        params,
+      ),
+      db.query(
+        `SELECT s.id, s.session_id AS "sessionId", ps.entity_id AS "entityId", e.name AS "entityName",
+                s.execute_after AS "executeAfter"
+         FROM rarecrest.seals s
+         JOIN rarecrest.parliament_sessions ps ON ps.id = s.session_id
+         JOIN rarecrest.entities e ON e.id = ps.entity_id
+         WHERE s.mode = 'time_lock' AND s.cancelled_at IS NULL AND s.executed_at IS NULL
+           AND s.execute_after <= NOW() + INTERVAL '24 hours'
+           ${verticalFilter}
+         ORDER BY s.execute_after ASC LIMIT 10`,
+        params,
+      ),
+    ]);
+    return {
+      openSessions: openRows.rows.map(mapGovernanceSession),
+      readyForSeal: readyRows.rows.map(mapGovernanceSession),
+      sealsDue: sealRows.rows.map((row) => ({
+        id: String(row.id),
+        sessionId: String(row.sessionId),
+        entityId: String(row.entityId),
+        entityName: String(row.entityName ?? row.entityId),
+        executeAfter:
+          (row.executeAfter as Date | string) instanceof Date
+            ? (row.executeAfter as Date).toISOString()
+            : String(row.executeAfter),
+      })),
+    };
+  } catch {
+    return EMPTY_GOVERNANCE_QUEUE;
+  }
+}
+
 /**
  * Build the full Command Center dashboard payload in one pass. Attention queue,
  * resolved flags, agent roster, and wiki-health signals load in parallel — this is
@@ -195,7 +298,7 @@ export async function buildCommandDashboard(
     : null;
   const sinceIso = since?.toISOString() ?? null;
 
-  const [resolved, roster, wikiHealth] = await Promise.all([
+  const [resolved, roster, wikiHealth, governanceQueue] = await Promise.all([
     db.query(
       `SELECT id FROM rarecrest.attention_flags WHERE resolved_at IS NOT NULL AND resolved_at > COALESCE($1, '1970-01-01')`,
       [sinceIso],
@@ -208,6 +311,7 @@ export async function buildCommandDashboard(
       [sinceIso],
     ),
     loadWikiHealth(db),
+    loadGovernanceQueue(db, verticalFilter),
   ]);
 
   const newItems = since ? queue.filter((q) => new Date(q.createdAt) > since) : queue;
@@ -236,6 +340,7 @@ export async function buildCommandDashboard(
     queue,
     portfolioClear: isPortfolioClear(queue),
     attentionAuction,
+    governanceQueue,
   };
 }
 

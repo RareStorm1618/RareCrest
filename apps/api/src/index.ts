@@ -44,6 +44,8 @@ import { registerHumanInstructionRoutes } from "./routes/human-instruction-route
 import { registerOpsRoutes } from "./routes/ops-routes.js";
 import { registerOfficerRoutes } from "./routes/officer-routes.js";
 import { registerParliamentRoutes } from "./routes/parliament-routes.js";
+import { registerDoctrineRoutes } from "./routes/doctrine-routes.js";
+import { registerHoldingMetricsRoutes } from "./routes/holding-metrics-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import {
@@ -137,6 +139,8 @@ export async function buildApp() {
   registerOpsRoutes(app, db);
   registerOfficerRoutes(app, db, governance, intelligence);
   registerParliamentRoutes(app, db, intelligence);
+  registerDoctrineRoutes(app, db);
+  registerHoldingMetricsRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

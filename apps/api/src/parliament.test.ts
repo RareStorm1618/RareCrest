@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { DatabaseClient } from "@rarecrest/db";
-import { ParliamentError, ParliamentService, parliamentRequired } from "./services/parliament.js";
+import {
+  ParliamentError,
+  ParliamentService,
+  parliamentRequired,
+  financialSealHours,
+  assertEffectDigestConsistent,
+} from "./services/parliament.js";
 
 interface FakeSession {
   id: string;
@@ -38,6 +44,7 @@ interface FakeSeal {
   overrideNote: string | null;
   correlationId: string | null;
   payload: Record<string, unknown>;
+  effectDigest: string | null;
 }
 
 /**
@@ -143,6 +150,7 @@ function createFakeDb() {
         overrideNote: (params[6] as string | null) ?? null,
         correlationId: params[7] as string,
         payload: JSON.parse(params[8] as string),
+        effectDigest: (params[9] as string | null) ?? null,
       };
       seals.set(id, row);
       return { rows: [row] };
@@ -487,6 +495,147 @@ describe("ParliamentService", () => {
         payload: {},
       }),
     ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it("stores effectDigest on sealSession and executeSeal succeeds when payload.effectDigest matches", async () => {
+    const session = await service.openSession({
+      entityId: "entity-1",
+      topic: "Financial release",
+      stakeClass: "financial_release",
+      createdBy: "director-a",
+    });
+    await service.castVote({
+      sessionId: session.id,
+      officerRole: "treasury_prep",
+      agentId: "agent-1",
+      vote: "aye",
+      stakeholderLens: "fiduciary",
+    });
+    await service.castVote({
+      sessionId: session.id,
+      officerRole: "compliance_prep",
+      agentId: "agent-2",
+      vote: "aye",
+      stakeholderLens: "lp",
+    });
+
+    const seal = await service.sealSession("director-a", {
+      sessionId: session.id,
+      mode: "immediate",
+      payload: { effectDigest: "digest-abc" },
+      effectDigest: "digest-abc",
+    });
+    expect(seal.effectDigest).toBe("digest-abc");
+
+    // immediate seals execute at seal time (executedAt already set) — cancelling/re-executing
+    // is refused, so directly assert the consistency helper instead of re-executing.
+    expect(() => assertEffectDigestConsistent(seal)).not.toThrow();
+  });
+
+  it("assertEffectDigestConsistent fails closed when effect_digest and payload digest disagree", () => {
+    const seal: FakeSeal = {
+      id: "seal-x",
+      sessionId: "session-x",
+      sealedBy: "director-a",
+      sealedAt: new Date().toISOString(),
+      mode: "immediate",
+      executeAfter: null,
+      cancelledAt: null,
+      executedAt: null,
+      humanInstructionId: null,
+      overrideNote: null,
+      correlationId: null,
+      payload: { effectDigest: "digest-other" },
+      effectDigest: "digest-abc",
+    };
+    expect(() => assertEffectDigestConsistent(seal as never)).toThrow(ParliamentError);
+    expect(() => assertEffectDigestConsistent(seal as never)).toThrow(/fail closed/);
+  });
+
+  it("assertEffectDigestConsistent is a no-op when either side is absent", () => {
+    const noEffectDigest: FakeSeal = {
+      id: "seal-y",
+      sessionId: "session-y",
+      sealedBy: "director-a",
+      sealedAt: new Date().toISOString(),
+      mode: "immediate",
+      executeAfter: null,
+      cancelledAt: null,
+      executedAt: null,
+      humanInstructionId: null,
+      overrideNote: null,
+      correlationId: null,
+      payload: { effectDigest: "digest-abc" },
+      effectDigest: null,
+    };
+    expect(() => assertEffectDigestConsistent(noEffectDigest as never)).not.toThrow();
+
+    const noPayloadDigest: FakeSeal = { ...noEffectDigest, effectDigest: "digest-abc", payload: {} };
+    expect(() => assertEffectDigestConsistent(noPayloadDigest as never)).not.toThrow();
+  });
+
+  it("executeSeal refuses a time-locked seal whose payload digest no longer matches effect_digest", async () => {
+    const session = await service.openSession({
+      entityId: "entity-1",
+      topic: "Financial release",
+      stakeClass: "financial_release",
+      createdBy: "director-a",
+    });
+    await service.castVote({
+      sessionId: session.id,
+      officerRole: "treasury_prep",
+      agentId: "agent-1",
+      vote: "aye",
+      stakeholderLens: "fiduciary",
+    });
+    await service.castVote({
+      sessionId: session.id,
+      officerRole: "compliance_prep",
+      agentId: "agent-2",
+      vote: "aye",
+      stakeholderLens: "lp",
+    });
+
+    const seal = await service.sealSession("director-a", {
+      sessionId: session.id,
+      mode: "time_lock",
+      executeAfterHours: 1,
+      payload: { effectDigest: "digest-tampered" },
+      effectDigest: "digest-original",
+    });
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(Date.now() + 2 * 3600_000));
+      await expect(service.executeSeal(seal.id)).rejects.toMatchObject({ statusCode: 409 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("financialSealHours", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("defaults to 4 when FINANCIAL_SEAL_HOURS is unset", () => {
+    delete process.env.FINANCIAL_SEAL_HOURS;
+    expect(financialSealHours()).toBe(4);
+  });
+
+  it("reads a positive FINANCIAL_SEAL_HOURS override", () => {
+    process.env.FINANCIAL_SEAL_HOURS = "8";
+    expect(financialSealHours()).toBe(8);
+  });
+
+  it("falls back to 4 for a non-positive or non-numeric override", () => {
+    process.env.FINANCIAL_SEAL_HOURS = "0";
+    expect(financialSealHours()).toBe(4);
+    process.env.FINANCIAL_SEAL_HOURS = "not-a-number";
+    expect(financialSealHours()).toBe(4);
   });
 });
 

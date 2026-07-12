@@ -105,4 +105,23 @@ describe("AsyncJobService (Wave 3)", () => {
     expect(sqlCalls.some((s) => s.includes("status = 'running'"))).toBe(true);
     expect(sqlCalls.some((s) => s.includes("status = 'failed'"))).toBe(true);
   });
+
+  it("markStale marks pending/running jobs past the staleness window as failed (EXO Wave A night-shift)", async () => {
+    const { db, calls } = mockDb([{ id: "job-1" }, { id: "job-2" }]);
+    const jobs = new AsyncJobService(db);
+    const count = await jobs.markStale(30);
+    expect(count).toBe(2);
+    const [sql, params] = calls[0];
+    expect(sql).toContain("SET status = 'failed'");
+    expect(sql).toContain("WHERE status IN ('pending', 'running')");
+    expect(params).toEqual([30]);
+  });
+
+  it("markStale defaults to a 60-minute staleness window", async () => {
+    const { db, calls } = mockDb([]);
+    const jobs = new AsyncJobService(db);
+    const count = await jobs.markStale();
+    expect(count).toBe(0);
+    expect(calls[0][1]).toEqual([60]);
+  });
 });

@@ -66,6 +66,8 @@ export function registerRuntimeRoutes(
       currentActivity: z.string().optional(),
       /** Client-supplied controls are ignored; kept optional for backward-compatible payloads. */
       activationControls: activationControlsSchema.optional(),
+      /** S3 gate: required when parliamentRequired() and status="running" (see below). */
+      parliamentSessionId: z.string().uuid().optional(),
     });
     try {
       const body = schema.parse(request.body);
@@ -119,6 +121,47 @@ export function registerRuntimeRoutes(
             derivedControls: controls,
           });
         }
+
+        // S3 gate: activation is a stake-class Parliament may hold, independent of the
+        // activation-controls verdict above. Required whenever parliamentRequired()
+        // (PARLIAMENT_REQUIRED=true, or AUTH_TRUST_MODE=strict unless explicitly disabled) —
+        // same resolveOrSealForAction pattern as financial_release / wiki_promote.
+        if (parliamentRequired()) {
+          if (!body.parliamentSessionId) {
+            await appendDenyTrace(intelligence, {
+              vertical: request.auth.vertical,
+              entityId: body.entityId,
+              action: "runtime_agent_activation",
+              reason: "missing_parliament_session_id",
+              route: "/api/v1/runtime/agents",
+              statusCode: 403,
+            });
+            return reply.status(403).send({
+              message: "Agent activation requires parliamentSessionId (PARLIAMENT_REQUIRED=true or AUTH_TRUST_MODE=strict)",
+            });
+          }
+          try {
+            await parliament.resolveOrSealForAction({
+              sessionId: body.parliamentSessionId,
+              stakeClass: "activation",
+              actorId: request.auth.userId,
+              payload: { agentId: body.agentId, entityId: body.entityId },
+            });
+          } catch (parliamentErr) {
+            if (parliamentErr instanceof ParliamentError) {
+              await appendDenyTrace(intelligence, {
+                vertical: request.auth.vertical,
+                entityId: body.entityId,
+                action: "runtime_agent_activation",
+                reason: parliamentErr.message,
+                route: "/api/v1/runtime/agents",
+                statusCode: parliamentErr.statusCode,
+              });
+              return reply.status(parliamentErr.statusCode).send({ message: parliamentErr.message });
+            }
+            throw parliamentErr;
+          }
+        }
       }
 
       const existing = await db.query(
@@ -156,6 +199,8 @@ export function registerRuntimeRoutes(
       entityId: z.string().uuid(),
       targetVersion: z.string().optional(),
       reason: z.string().min(1),
+      /** S3 gate: required when parliamentRequired() — rollback-to-running is an activation path. */
+      parliamentSessionId: z.string().uuid().optional(),
     });
     try {
       const body = schema.parse(request.body);
@@ -256,6 +301,70 @@ export function registerRuntimeRoutes(
           missingControls: activation.missingControls,
           derivedControls: controls,
         });
+      }
+
+      // S3 gate: rollback-to-running is the same "activation" stake-class Parliament may
+      // hold as fresh activation — required whenever parliamentRequired(). A blocked
+      // rollback halts the agent instead of leaving it in an ambiguous prior state.
+      if (parliamentRequired()) {
+        if (!body.parliamentSessionId) {
+          await db.query(
+            `UPDATE rarecrest.agent_roster SET status = 'halted', updated_at = NOW() WHERE agent_id = $1 AND entity_id = $2`,
+            [body.agentId, body.entityId],
+          );
+          await db.query(
+            `INSERT INTO rarecrest.agent_rollbacks (agent_id, entity_id, from_version, to_version, reason, status)
+             VALUES ($1, $2, $3, $4, $5, 'halted_instead')`,
+            [body.agentId, body.entityId, agent.rows[0].version, targetVersion, body.reason],
+          );
+          await appendDenyTrace(intelligence, {
+            vertical: request.auth.vertical,
+            entityId: body.entityId,
+            action: "agent_rollback",
+            reason: "missing_parliament_session_id",
+            route: "/api/v1/runtime/rollback",
+            statusCode: 403,
+          });
+          return reply.status(403).send({
+            agentId: body.agentId,
+            status: "halted_instead",
+            message: "Rollback-to-running requires parliamentSessionId (PARLIAMENT_REQUIRED=true or AUTH_TRUST_MODE=strict) — agent halted",
+          });
+        }
+        try {
+          await parliament.resolveOrSealForAction({
+            sessionId: body.parliamentSessionId,
+            stakeClass: "activation",
+            actorId: request.auth.userId,
+            payload: { agentId: body.agentId, entityId: body.entityId, rollback: true },
+          });
+        } catch (parliamentErr) {
+          if (parliamentErr instanceof ParliamentError) {
+            await db.query(
+              `UPDATE rarecrest.agent_roster SET status = 'halted', updated_at = NOW() WHERE agent_id = $1 AND entity_id = $2`,
+              [body.agentId, body.entityId],
+            );
+            await db.query(
+              `INSERT INTO rarecrest.agent_rollbacks (agent_id, entity_id, from_version, to_version, reason, status)
+               VALUES ($1, $2, $3, $4, $5, 'halted_instead')`,
+              [body.agentId, body.entityId, agent.rows[0].version, targetVersion, body.reason],
+            );
+            await appendDenyTrace(intelligence, {
+              vertical: request.auth.vertical,
+              entityId: body.entityId,
+              action: "agent_rollback",
+              reason: parliamentErr.message,
+              route: "/api/v1/runtime/rollback",
+              statusCode: parliamentErr.statusCode,
+            });
+            return reply.status(parliamentErr.statusCode).send({
+              agentId: body.agentId,
+              status: "halted_instead",
+              message: parliamentErr.message,
+            });
+          }
+          throw parliamentErr;
+        }
       }
 
       await db.query(

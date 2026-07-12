@@ -21,6 +21,8 @@ lone signature (even a director's) is not enough.
 | Human instructions | The durable authorization record behind every financial/held-action release — never a bare client-supplied id, always verified server-side against `rarecrest.human_instructions`. | `apps/api/src/routes/human-instruction-routes.ts` |
 | PHI encryption layer | Per-entity, KMS-wrapped envelope custody; agents get blind refs, never plaintext. | `docs/TRUST.md` §"What is fail-closed today" |
 | **Parliament + Seal** | The organism's *collective* decision layer: multi-officer, multi-stakeholder-lens deliberation gate in front of the actions above a single director's signature shouldn't carry alone. | This document, §"Parliament + Seal" |
+| North Star metrics | Durable, append-only mission events (`capital_routed_usd`, `healing_hours`, `families_supported`, `donation_pct_bps`) feeding a single `dualMissionScore`. | `apps/api/src/services/holding-metrics.ts`, `apps/api/src/routes/holding-metrics-routes.ts`, this document §"North Star metrics" |
+| AI spend ledger | Append-only, best-effort durable record of every model call's estimated token cost, independent of the in-memory per-vertical daily budget. | `rarecrest.ai_spend_ledger`, `services/intelligence/src/spend-ledger.ts`, `GET /api/v1/ops/ai-spend` |
 
 Individually, each of these is a local reflex: a rights ceiling, a kill switch, a signed
 instruction. None of them requires more than one human to act. Parliament + Seal is what sits
@@ -85,6 +87,65 @@ whenever `AUTH_TRUST_MODE=strict` and `PARLIAMENT_REQUIRED` has not been explici
 `false`. `PARLIAMENT_REQUIRED=false` always wins — this is the dev-loopback / test opt-out, so
 a solo developer running the stack locally is never blocked by a governance ceremony meant for
 production-consequential actions.
+
+## Night shift
+
+Parliament's `time_lock` seals and async jobs both need an unattended, periodic pass —
+nobody should have to remember to click "execute due seals" every few hours. `runNightShift`
+(`apps/api/src/worker/night-shift.ts`) does two narrow things: executes any due `time_lock`
+seals (reusing `ParliamentService.listDueSeals`/`executeSeal`, so the same fail-closed
+time-lock and effect-digest checks apply) and marks `async_jobs` stuck in `pending`/`running`
+past a staleness window as `failed`. It deliberately does *not* attempt the
+`wiki_promote` side-effect the director-triggered `/api/v1/seals/due/execute` route performs —
+that stays a human-triggered action.
+
+`POST /api/v1/ops/night-shift/run` is gated the same way as `/api/v1/seals/due/execute`: a
+verified director, or a trusted internal caller presenting `x-internal-service-token`. A
+cron-driven scheduler on the host (or any process with the internal service token) can drive
+it every 15 minutes:
+
+```
+*/15 * * * * curl -s -X POST https://localhost:3000/api/v1/ops/night-shift/run \
+  -H "x-internal-service-token: $INTERNAL_SERVICE_TOKEN" -H "x-vertical: holding" -H "x-user-id: night-shift"
+```
+
+## North Star metrics
+
+The mission the holding layer exists to serve — routing capital *and* healing people — is
+easy to lose sight of one entity at a time. `POST /api/v1/holding/metrics` lets a director or a
+verified human record a durable, append-only event (`rarecrest.holding_metric_events`) against
+one of four keys: `capital_routed_usd`, `healing_hours`, `families_supported`, and
+`donation_pct_bps` (donation percentage in basis points, so `750` = 7.5%). Agents cannot write
+these events — this is a human-attested ledger of what actually happened, not a model's guess.
+
+`GET /api/v1/holding/north-star` aggregates the trailing window (30 days by default,
+`?days=` to override) into totals plus a single `dualMissionScore` (0-100): each of the four
+totals is normalized against a documented target (`NORTH_STAR_TARGETS` in
+`apps/api/src/services/holding-metrics.ts` — $1M capital, 10,000 healing hours, 1,000 families,
+10,000bps/100% donation ceiling), capped at 1.0, then averaged and scaled to 0-100. It is
+deliberately a simple, transparent heuristic rather than a "smart" model — the point is that a
+director can read the formula in one pass and know exactly what the number does and does not
+mean. The Command Center's North Star card renders this on load.
+
+## Durable AI spend + the model-router extension point
+
+Every skill-companion `complete` response now writes a best-effort row to
+`rarecrest.ai_spend_ledger` (`services/intelligence/src/spend-ledger.ts`) — vertical, entity,
+provider, a `len/4` token estimate for both the request and the response, and an estimated USD
+cost (`AI_SPEND_INPUT_USD_PER_1M` / `AI_SPEND_OUTPUT_USD_PER_1M`, defaulting to a deliberately
+rough $0.50/$1.50 per 1M tokens placeholder — documented, not hidden, until real provider
+billing is wired in). This is strictly additive: the existing in-memory per-vertical daily
+budget in `services/intelligence/src/budgets.ts` stays the fast hot-path gate, and a
+missing/unreachable database never blocks a companion response. `GET /api/v1/ops/ai-spend`
+(director-only) sums this ledger by vertical over a trailing window (`?days=`, default 7).
+
+`ModelRouter` (`services/intelligence/src/model-router.ts`) still defaults to a deterministic
+stub response when no explicit `ProviderCaller` is wired — until a director sets
+`LLM_HTTP_ENDPOINT`. When set, every stub-path call instead `POST`s
+`{ prompt, provider, maxTokens?, temperature? }` to that URL and treats a JSON `{ text }` (or
+`{ content }`) field, or a plain-text body, as the model's response. This is the seam meant for
+plugging in a real backing model (self-hosted or gateway) without touching any router/caller
+code — see `docs/TRUST.md` for the environment knob.
 
 ## Why this shape
 

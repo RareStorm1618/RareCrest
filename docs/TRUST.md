@@ -30,6 +30,8 @@ See [`VPS-CUTOVER.md`](./VPS-CUTOVER.md) for the concrete private-VPS deployment
 | Decision-trace hash chain | Every `decision_traces` row carries `content_hash = sha256(entityId+action+payload)` and `prev_hash` from the entity's prior trace — tamper-evident in addition to the existing append-only DB trigger. |
 | Observability | `GET /metrics` (unauthenticated, like `/health`, no PHI/secrets) exposes Prometheus-ish counters: RPC-unauthorized, PHI-decrypt allow/deny, kill-switch arm/trigger/disarm, auth failures, RBAC denials. |
 | Parliament + Seal | Multi-officer, multi-stakeholder-lens deliberation gate (`rarecrest.parliament_sessions`/`parliament_votes`/`seals`) in front of `wiki_promote`/`financial_release`/`activation`/`doctrine` actions. Required whenever `PARLIAMENT_REQUIRED=true` or `AUTH_TRUST_MODE=strict` (unless explicitly disabled). Sealing is director-only; a red-team `nay` blocks sealing without an explicit `overrideNote`; `time_lock` seals enforce their cooling-off window server-side and are cancellable before they execute. See [`SOLO-ORGANISM.md`](./SOLO-ORGANISM.md) for the full ceremony. |
+| Holding metrics ledger | `POST /api/v1/holding/metrics` is gated to `role=director` or a verified human (`isVerifiedHumanOrDirector` — same dev/strict OIDC posture as `isVerifiedDirector`); agents cannot write North Star events. `GET /api/v1/holding/north-star` and `GET /api/v1/ops/ai-spend` (director-only) are read paths, no PHI. |
+| AI spend ledger | `rarecrest.ai_spend_ledger` writes from `services/intelligence/src/spend-ledger.ts` are best-effort — a missing table or unset `DATABASE_URL`/`INTELLIGENCE_DATABASE_URL` never throws or blocks a companion response; it only stops the durable record from being written. |
 
 ## Federated Canon Wiki
 
@@ -86,6 +88,8 @@ See [`VPS-CUTOVER.md`](./VPS-CUTOVER.md) for the concrete private-VPS deployment
 | `VITE_API_BEARER_TOKEN` / `EXPO_PUBLIC_API_BEARER_TOKEN` | Client Bearer tokens. |
 | `PARLIAMENT_REQUIRED` | `true`/`false` — explicit override for the Parliament + Seal gate. Unset defers to `AUTH_TRUST_MODE=strict`. `false` always wins (dev-loopback opt-out). |
 | `PARLIAMENT_MIN_VOTES` | Distinct `stakeholder_lens` votes required before a Parliament session becomes `ready_for_seal`. Defaults to `2`. |
+| `LLM_HTTP_ENDPOINT` | When set, `ModelRouter`'s stub path (no explicit `ProviderCaller` wired) POSTs `{ prompt, provider, maxTokens?, temperature? }` to this URL and uses the JSON `{ text }`/`{ content }` field (or a plain-text body) as the model response — the extension point for a real backing model. Unset ⇒ deterministic stub response (dev/test default). |
+| `AI_SPEND_INPUT_USD_PER_1M` / `AI_SPEND_OUTPUT_USD_PER_1M` | Override the durable AI-spend-ledger cost heuristic (default `0.5` / `1.5` USD per 1M tokens). Documented placeholder until real provider billing is wired in. |
 
 ## Production cutover checklist
 

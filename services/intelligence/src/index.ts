@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { readFileSync } from "node:fs";
 import { DatabaseClient } from "@rarecrest/db";
 import { ModelRouter, applyProviderEndpoints, parseProviderAllowlist, parseProviderEndpoints } from "./model-router.js";
+import { recordSpend } from "./spend-ledger.js";
 import { DecisionTraceService } from "./decision-trace.js";
 import { SkillCompanionService } from "./skill-companion.js";
 import { runEvaluation, persistEvaluationRun } from "./evaluation-runner.js";
@@ -143,6 +144,17 @@ export async function buildIntelligenceApp() {
         throw err;
       }
       const result = await companion.complete(request.body as never);
+
+      // EXO Wave C — durable spend record, best-effort and after the response is
+      // computed; a len/4 heuristic on request/result JSON, matching estimateTokens.
+      await recordSpend(db, {
+        vertical: request.body.vertical,
+        entityId: request.body.entityId ?? null,
+        provider: router.getActiveProviders()[0]?.id ?? "unknown",
+        inputTokens: estimateTokens(JSON.stringify(request.body)),
+        outputTokens: estimateTokens(JSON.stringify(result)),
+      });
+
       return reply.send(result);
     },
   );

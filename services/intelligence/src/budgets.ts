@@ -1,4 +1,11 @@
-/** Wave 3: per-vertical token budget for the skill-companion companion path. */
+/**
+ * Wave 3: per-vertical token budget for the skill-companion companion path.
+ *
+ * EXO Wave C: this stays the fast in-memory gate (no DB round-trip on the hot
+ * path). Durable, queryable spend recording is a separate, best-effort append
+ * — see `recordSpend` in `./spend-ledger.js`, wired from the `/rpc/skill-companion/complete`
+ * handler in `index.ts` after a response is produced.
+ */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAILY_BUDGET = 100_000;

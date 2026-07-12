@@ -82,6 +82,23 @@ export class AsyncJobService {
     );
   }
 
+  /**
+   * Night-shift housekeeping: jobs stuck in `pending`/`running` past `staleAfterMinutes`
+   * (a worker that died mid-job, or one that was never picked up) are marked `failed` so
+   * they stop looking "in flight" forever. Returns the count of jobs marked stale.
+   */
+  async markStale(staleAfterMinutes = 60): Promise<number> {
+    const result = await this.db.query(
+      `UPDATE rarecrest.async_jobs
+       SET status = 'failed', error = 'stale — marked failed by night-shift', updated_at = NOW()
+       WHERE status IN ('pending', 'running')
+         AND updated_at < NOW() - ($1 * INTERVAL '1 minute')
+       RETURNING id`,
+      [staleAfterMinutes],
+    );
+    return result.rows.length;
+  }
+
   /** Runs work with pending→running→(ready|failed) transitions. Rethrows on failure. */
   async run<T extends Record<string, unknown>>(id: string, work: () => Promise<T>): Promise<T> {
     await this.markRunning(id);

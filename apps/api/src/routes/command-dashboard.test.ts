@@ -29,6 +29,9 @@ function buildApp(auth: AuthContext, db: DatabaseClient) {
 
 interface MockDbOverrides {
   attentionQueueRows?: Array<Record<string, unknown>>;
+  governanceOpenSessions?: Array<Record<string, unknown>>;
+  governanceReadySessions?: Array<Record<string, unknown>>;
+  governanceSealsDue?: Array<Record<string, unknown>>;
 }
 
 function mockDb(overrides: MockDbOverrides = {}): { db: DatabaseClient; calls: Array<[string, unknown[] | undefined]> } {
@@ -78,6 +81,15 @@ function mockDb(overrides: MockDbOverrides = {}): { db: DatabaseClient; calls: A
       }
       if (sql.includes("FROM rarecrest.entities WHERE vertical = 'holding'")) {
         return { rows: [] };
+      }
+      if (sql.includes("FROM rarecrest.parliament_sessions ps") && sql.includes("status = 'open'")) {
+        return { rows: overrides.governanceOpenSessions ?? [] };
+      }
+      if (sql.includes("FROM rarecrest.parliament_sessions ps") && sql.includes("status = 'ready_for_seal'")) {
+        return { rows: overrides.governanceReadySessions ?? [] };
+      }
+      if (sql.includes("FROM rarecrest.seals s") && sql.includes("mode = 'time_lock'")) {
+        return { rows: overrides.governanceSealsDue ?? [] };
       }
       return { rows: [] };
     }),
@@ -151,6 +163,97 @@ describe("GET /api/v1/command/morning-brief", () => {
     expect(Array.isArray(body.sections)).toBe(true);
     const upsertCalls = calls.filter(([sql]) => sql.includes("INSERT INTO rarecrest.director_sessions"));
     expect(upsertCalls).toHaveLength(1);
+    await app.close();
+  });
+});
+
+describe("GET /api/v1/command/dashboard — governanceQueue (EXO Wave A)", () => {
+  it("returns an empty governanceQueue shape when no Parliament sessions/seals are open", async () => {
+    const { db } = mockDb();
+    const app = buildApp(DIRECTOR_AUTH, db);
+    await app.ready();
+    const response = await app.inject({ method: "GET", url: "/api/v1/command/dashboard" });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      governanceQueue: { openSessions: unknown[]; readyForSeal: unknown[]; sealsDue: unknown[] };
+    };
+    expect(body.governanceQueue).toEqual({ openSessions: [], readyForSeal: [], sealsDue: [] });
+    await app.close();
+  });
+
+  it("maps open sessions, ready-for-seal sessions, and seals due within 24h", async () => {
+    const { db } = mockDb({
+      governanceOpenSessions: [
+        {
+          id: "session-open-1",
+          entityId: ENTITY_ID,
+          entityName: "Test Entity",
+          topic: "Promote canon page",
+          stakeClass: "wiki_promote",
+          status: "open",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+      governanceReadySessions: [
+        {
+          id: "session-ready-1",
+          entityId: ENTITY_ID,
+          entityName: "Test Entity",
+          topic: "Activate agent",
+          stakeClass: "activation",
+          status: "ready_for_seal",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+      governanceSealsDue: [
+        {
+          id: "seal-due-1",
+          sessionId: "session-sealed-1",
+          entityId: ENTITY_ID,
+          entityName: "Test Entity",
+          executeAfter: new Date("2026-01-02T00:00:00Z"),
+        },
+      ],
+    });
+    const app = buildApp(DIRECTOR_AUTH, db);
+    await app.ready();
+    const response = await app.inject({ method: "GET", url: "/api/v1/command/dashboard" });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      governanceQueue: {
+        openSessions: Array<{ id: string; stakeClass: string; entityName: string }>;
+        readyForSeal: Array<{ id: string; stakeClass: string }>;
+        sealsDue: Array<{ id: string; sessionId: string; executeAfter: string }>;
+      };
+    };
+    expect(body.governanceQueue.openSessions).toHaveLength(1);
+    expect(body.governanceQueue.openSessions[0]).toMatchObject({
+      id: "session-open-1",
+      stakeClass: "wiki_promote",
+      entityName: "Test Entity",
+    });
+    expect(body.governanceQueue.readyForSeal).toHaveLength(1);
+    expect(body.governanceQueue.readyForSeal[0]).toMatchObject({ id: "session-ready-1", stakeClass: "activation" });
+    expect(body.governanceQueue.sealsDue).toHaveLength(1);
+    expect(body.governanceQueue.sealsDue[0]).toMatchObject({ id: "seal-due-1", sessionId: "session-sealed-1" });
+    await app.close();
+  });
+
+  it("fails soft (empty governanceQueue) if the Parliament tables are unqueryable", async () => {
+    const db = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("FROM rarecrest.parliament_sessions") || sql.includes("FROM rarecrest.seals")) {
+          throw new Error("relation does not exist");
+        }
+        return { rows: [] };
+      }),
+    } as unknown as DatabaseClient;
+    const app = buildApp(DIRECTOR_AUTH, db);
+    await app.ready();
+    const response = await app.inject({ method: "GET", url: "/api/v1/command/dashboard" });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { governanceQueue: { openSessions: unknown[] } };
+    expect(body.governanceQueue).toEqual({ openSessions: [], readyForSeal: [], sealsDue: [] });
     await app.close();
   });
 });

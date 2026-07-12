@@ -7,7 +7,7 @@ import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { isVerifiedDirector } from "../trust.js";
 import { readInternalServiceToken } from "../fortress.js";
-import { ParliamentError, ParliamentService } from "../services/parliament.js";
+import { ParliamentError, ParliamentService, financialSealHours } from "../services/parliament.js";
 import { WikiService } from "../services/wiki.js";
 
 const stakeClassSchema = z.enum(["wiki_promote", "financial_release", "activation", "doctrine"]);
@@ -136,24 +136,44 @@ export function registerParliamentRoutes(
   app.post("/api/v1/parliament/:id/seal", async (request, reply) => {
     const { id } = request.params as { id: string };
     const schema = z.object({
-      mode: sealModeSchema,
+      // financial_release defaults to time_lock (see below) when omitted; every other
+      // stake_class must specify mode explicitly.
+      mode: sealModeSchema.optional(),
       executeAfterHours: z.number().positive().max(720).optional(),
       humanInstructionId: z.string().uuid().optional(),
       overrideNote: z.string().optional(),
       payload: z.record(z.unknown()).default({}),
+      /** EXO Wave A: binding digest for the exact effect this seal authorizes. */
+      effectDigest: z.string().min(1).optional(),
     });
     try {
       const body = schema.parse(request.body);
       const session = await parliament.getSession(id);
       await assertEntityAccess(db, session.entityId, request.auth);
       assertDirector(request);
+
+      let mode = body.mode;
+      if (!mode) {
+        if (session.stakeClass !== "financial_release") {
+          return reply.status(400).send({ message: "mode is required for this stake_class" });
+        }
+        mode = "time_lock";
+      }
+      // financial_release cooling-off default: FINANCIAL_SEAL_HOURS env (default 4) —
+      // distinct from the generic time-lock default so financial releases can be tuned
+      // independently of other stake classes.
+      const executeAfterHours =
+        body.executeAfterHours ??
+        (mode === "time_lock" && session.stakeClass === "financial_release" ? financialSealHours() : undefined);
+
       const seal = await parliament.sealSession(request.auth.userId, {
         sessionId: id,
-        mode: body.mode,
-        executeAfterHours: body.executeAfterHours,
+        mode,
+        executeAfterHours,
         humanInstructionId: body.humanInstructionId,
         overrideNote: body.overrideNote,
         payload: body.payload,
+        effectDigest: body.effectDigest,
       });
       try {
         await intelligence.appendTrace({

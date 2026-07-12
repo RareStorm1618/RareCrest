@@ -54,10 +54,14 @@ export interface SealRow {
   overrideNote: string | null;
   correlationId: string | null;
   payload: Record<string, unknown>;
+  /** EXO Wave A: optional binding digest for the exact effect this seal authorizes — see
+   * `assertEffectDigestConsistent`. */
+  effectDigest: string | null;
 }
 
 const DEFAULT_MIN_VOTES = 2;
 const DEFAULT_TIME_LOCK_HOURS = 4;
+const DEFAULT_FINANCIAL_SEAL_HOURS = 4;
 
 const SESSION_COLUMNS = `id, entity_id AS "entityId", topic, stake_class AS "stakeClass", status,
                 created_by AS "createdBy", red_team_nay AS "redTeamNay",
@@ -69,11 +73,22 @@ const VOTE_COLUMNS = `id, session_id AS "sessionId", officer_role AS "officerRol
 const SEAL_COLUMNS = `id, session_id AS "sessionId", sealed_by AS "sealedBy", sealed_at AS "sealedAt",
                 mode, execute_after AS "executeAfter", cancelled_at AS "cancelledAt",
                 executed_at AS "executedAt", human_instruction_id AS "humanInstructionId",
-                override_note AS "overrideNote", correlation_id AS "correlationId", payload`;
+                override_note AS "overrideNote", correlation_id AS "correlationId", payload,
+                effect_digest AS "effectDigest"`;
 
 function minVotes(): number {
   const raw = Number(process.env.PARLIAMENT_MIN_VOTES);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MIN_VOTES;
+}
+
+/**
+ * `POST /api/v1/parliament/:id/seal` default cooling-off window for `financial_release`
+ * seals when `mode`/`executeAfterHours` are omitted — a separate, explicit env var from the
+ * generic `DEFAULT_TIME_LOCK_HOURS` so financial cooling-off can be tuned independently.
+ */
+export function financialSealHours(): number {
+  const raw = Number(process.env.FINANCIAL_SEAL_HOURS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_FINANCIAL_SEAL_HOURS;
 }
 
 /**
@@ -130,7 +145,28 @@ function mapSeal(row: Record<string, unknown>): SealRow {
     overrideNote: row.overrideNote ? String(row.overrideNote) : null,
     correlationId: row.correlationId ? String(row.correlationId) : null,
     payload: (row.payload as Record<string, unknown>) ?? {},
+    effectDigest: row.effectDigest ? String(row.effectDigest) : null,
   };
+}
+
+/**
+ * EXO Wave A fail-closed check: when a seal was sealed with an `effectDigest` *and* its
+ * payload independently carries a `digest`/`effectDigest` field, the two must agree — this
+ * catches a sealed action's payload silently drifting from what was actually authorized
+ * (e.g. re-sealed/re-payloaded between vote and execution). Absence of either side is not an
+ * error by itself (effectDigest is optional); only a *mismatch* between both present values
+ * fails closed.
+ */
+export function assertEffectDigestConsistent(seal: SealRow): void {
+  if (!seal.effectDigest) return;
+  const payloadDigest = seal.payload.effectDigest ?? seal.payload.digest;
+  if (typeof payloadDigest !== "string" || payloadDigest.length === 0) return;
+  if (payloadDigest !== seal.effectDigest) {
+    throw new ParliamentError(
+      "Seal effect_digest does not match payload digest — fail closed",
+      409,
+    );
+  }
 }
 
 /**
@@ -261,6 +297,8 @@ export class ParliamentService {
       overrideNote?: string;
       payload?: Record<string, unknown>;
       correlationId?: string;
+      /** EXO Wave A: binding digest for the exact effect this seal authorizes. */
+      effectDigest?: string;
     },
   ): Promise<SealRow> {
     const session = await this.getSession(input.sessionId);
@@ -295,8 +333,8 @@ export class ParliamentService {
     const inserted = await this.db.query(
       `INSERT INTO rarecrest.seals
          (session_id, sealed_by, mode, execute_after, executed_at, human_instruction_id,
-          override_note, correlation_id, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+          override_note, correlation_id, payload, effect_digest)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
        RETURNING ${SEAL_COLUMNS}`,
       [
         input.sessionId,
@@ -308,6 +346,7 @@ export class ParliamentService {
         input.overrideNote ?? null,
         correlationId,
         JSON.stringify(input.payload ?? {}),
+        input.effectDigest ?? null,
       ],
     );
 
@@ -404,6 +443,7 @@ export class ParliamentService {
     if (seal.mode === "time_lock" && seal.executeAfter && new Date(seal.executeAfter).getTime() > Date.now()) {
       throw new ParliamentError("Time-lock has not elapsed yet", 403);
     }
+    assertEffectDigestConsistent(seal);
     return this.markExecuted(sealId);
   }
 
@@ -429,6 +469,7 @@ export class ParliamentService {
     if (session.status === "sealed") {
       const seal = await this.getLatestSealForSession(session.id);
       if (!seal) throw new ParliamentError("Sealed session has no seal record", 500);
+      assertEffectDigestConsistent(seal);
       return { session, seal };
     }
     if (session.status === "ready_for_seal") {
@@ -437,6 +478,7 @@ export class ParliamentService {
         mode: "immediate",
         payload: input.payload,
       });
+      assertEffectDigestConsistent(seal);
       return { session: await this.getSession(session.id), seal };
     }
     throw new ParliamentError(

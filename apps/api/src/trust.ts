@@ -173,3 +173,22 @@ export function isVerifiedDirector(
   }
   return false;
 }
+
+/**
+ * EXO Wave B — "director or verified human" gate for holding metric ingestion.
+ * A human contributor (role=human) is trusted the same way a director is: in dev
+ * trust mode the header shim is enough for local demos, but in strict mode the
+ * claim must come from a verified OIDC bearer token — never a spoofable header.
+ * Directors always qualify (a director is a human too).
+ */
+export function isVerifiedHumanOrDirector(
+  auth: AuthContext,
+  headers: Record<string, unknown>,
+): boolean {
+  if (isVerifiedDirector(auth, headers)) return true;
+  const headerRole = headers["x-user-role"];
+  const role = auth.role ?? (typeof headerRole === "string" ? headerRole : undefined);
+  if (role !== "human") return false;
+  if (trustMode() === "dev") return true;
+  return auth.authMethod === "oidc";
+}

@@ -119,6 +119,10 @@ export class ModelRouter {
     if (this.caller) {
       return this.caller(provider, request);
     }
+    const httpEndpoint = process.env.LLM_HTTP_ENDPOINT;
+    if (httpEndpoint) {
+      return callLlmHttpEndpoint(httpEndpoint, provider, request);
+    }
     const content = `[${provider.name}] response to: ${request.prompt.slice(0, 100)}`;
     return {
       providerId: provider.id,
@@ -137,4 +141,45 @@ export class ModelRouterError extends Error {
     super(message);
     this.name = "ModelRouterError";
   }
+}
+
+/**
+ * `LLM_HTTP_ENDPOINT` extension point: when set (and no explicit `ProviderCaller`
+ * is wired), ModelRouter POSTs `{ prompt, provider, maxTokens?, temperature? }`
+ * to this URL and treats the JSON `{ text }` (or `{ content }`) field, or a
+ * plain-text body, as the model's response — replacing the deterministic stub
+ * with a real backing model without any router/caller code changes. See
+ * docs/TRUST.md and docs/SOLO-ORGANISM.md for the operational contract.
+ */
+export async function callLlmHttpEndpoint(
+  endpoint: string,
+  provider: ModelProvider,
+  request: ModelRequest,
+): Promise<ModelResponse> {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: request.prompt,
+      provider: provider.id,
+      maxTokens: request.maxTokens,
+      temperature: request.temperature,
+    }),
+  });
+  if (!response.ok) {
+    throw new ModelRouterError(`LLM_HTTP_ENDPOINT request failed: ${response.status} ${response.statusText}`);
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  let content: string;
+  if (contentType.includes("application/json")) {
+    const data = (await response.json()) as { text?: string; content?: string };
+    content = data.text ?? data.content ?? "";
+  } else {
+    content = await response.text();
+  }
+  return {
+    providerId: provider.id,
+    content,
+    tokensUsed: Math.ceil(content.length / 4),
+  };
 }
