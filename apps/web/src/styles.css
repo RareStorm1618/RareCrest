@@ -332,6 +332,8 @@ ul[role="alert"] { color: #ff6b6b; }
 .governance-card { border-left: 3px solid #a78bfa; }
 .governance-card.ready-for-seal { border-left-color: #fbbf24; }
 .governance-card.seal-due { border-left-color: #f87171; }
+.federation-card { border-left: 3px solid #34d399; }
+.federation-card.status-rejected { border-left-color: #f87171; }
 
 .attention-queue-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
 .attention-queue-item {

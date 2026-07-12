@@ -131,6 +131,7 @@ describe("GET /api/v1/command/dashboard", () => {
     expect(body.ranked).toHaveLength(1);
     expect(body.ranked[0]).toMatchObject({ itemId: "flag-1", rank: 1 });
     expect(body.portfolioClear).toBe(false);
+    expect(Array.isArray((body as { federationFeed?: unknown[] }).federationFeed)).toBe(true);
 
     // Single consolidated query pass touches the director session exactly once.
     const upsertCalls = calls.filter(([sql]) => sql.includes("INSERT INTO rarecrest.director_sessions"));

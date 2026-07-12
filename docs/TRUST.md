@@ -90,6 +90,8 @@ See [`VPS-CUTOVER.md`](./VPS-CUTOVER.md) for the concrete private-VPS deployment
 | `PARLIAMENT_MIN_VOTES` | Distinct `stakeholder_lens` votes required before a Parliament session becomes `ready_for_seal`. Defaults to `2`. |
 | `LLM_HTTP_ENDPOINT` | When set, `ModelRouter`'s stub path (no explicit `ProviderCaller` wired) POSTs `{ prompt, provider, maxTokens?, temperature? }` to this URL and uses the JSON `{ text }`/`{ content }` field (or a plain-text body) as the model response — the extension point for a real backing model. Unset ⇒ deterministic stub response (dev/test default). |
 | `AI_SPEND_INPUT_USD_PER_1M` / `AI_SPEND_OUTPUT_USD_PER_1M` | Override the durable AI-spend-ledger cost heuristic (default `0.5` / `1.5` USD per 1M tokens). Documented placeholder until real provider billing is wired in. |
+| `FEDERATION_WEBHOOK_SECRET` / `_FILE` | Shared HMAC secret for `POST /api/v1/federation/ingress/:vertical`. |
+| `FEDERATION_WEBHOOK_SECRET_<VERTICAL>` / `_FILE` | Per-vertical override (e.g. `FEDERATION_WEBHOOK_SECRET_RAREEDGE`). Preferred over the shared secret. |
 
 ## Production cutover checklist
 

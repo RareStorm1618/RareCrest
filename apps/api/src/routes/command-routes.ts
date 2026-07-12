@@ -19,6 +19,7 @@ import {
   repossess,
   type AgentAttentionBudget,
 } from "../services/attention-budget.js";
+import { listFederationEvents, type VerticalIngressEvent } from "../services/vertical-federation.js";
 
 /** AC-CMD-001: agent_roster activity → morning-brief agent_activity section. */
 export function mapAgentActivity(
@@ -46,6 +47,8 @@ export interface CommandDashboard {
   attentionAuction: AttentionAuction;
   /** EXO Wave A: Parliament + Seal deliberation queue — see loadGovernanceQueue. */
   governanceQueue: GovernanceQueue;
+  /** Vertical federation ingress feed — recent SoR events from product verticals. */
+  federationFeed: VerticalIngressEvent[];
 }
 
 /** Postgres-backed director-session upsert (migration 024 adds the unique index on director_id). */
@@ -298,7 +301,7 @@ export async function buildCommandDashboard(
     : null;
   const sinceIso = since?.toISOString() ?? null;
 
-  const [resolved, roster, wikiHealth, governanceQueue] = await Promise.all([
+  const [resolved, roster, wikiHealth, governanceQueue, federationFeed] = await Promise.all([
     db.query(
       `SELECT id FROM rarecrest.attention_flags WHERE resolved_at IS NOT NULL AND resolved_at > COALESCE($1, '1970-01-01')`,
       [sinceIso],
@@ -312,6 +315,7 @@ export async function buildCommandDashboard(
     ),
     loadWikiHealth(db),
     loadGovernanceQueue(db, verticalFilter),
+    listFederationEvents(db, { vertical: verticalFilter, limit: 10 }).catch(() => [] as VerticalIngressEvent[]),
   ]);
 
   const newItems = since ? queue.filter((q) => new Date(q.createdAt) > since) : queue;
@@ -341,6 +345,7 @@ export async function buildCommandDashboard(
     portfolioClear: isPortfolioClear(queue),
     attentionAuction,
     governanceQueue,
+    federationFeed,
   };
 }
 

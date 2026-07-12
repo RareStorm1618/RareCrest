@@ -103,6 +103,19 @@ interface CommandDashboardResponse {
   portfolioClear: boolean;
   attentionAuction?: AttentionAuction;
   governanceQueue?: GovernanceQueue;
+  federationFeed?: FederationFeedEvent[];
+}
+
+interface FederationFeedEvent {
+  id: string;
+  vertical: string;
+  sourceSystem: string;
+  eventType: string;
+  deliveryId: string;
+  entityId: string | null;
+  status: string;
+  receivedAt: string;
+  effects: Array<{ kind: string; detail: string; refId?: string }>;
 }
 
 interface BackupStatus {
@@ -144,6 +157,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
   const [portfolioClear, setPortfolioClear] = useState(true);
   const [attentionAuction, setAttentionAuction] = useState<AttentionAuction | null>(null);
   const [governanceQueue, setGovernanceQueue] = useState<GovernanceQueue | null>(null);
+  const [federationFeed, setFederationFeed] = useState<FederationFeedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
@@ -163,6 +177,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
         setPortfolioClear(data.portfolioClear ?? true);
         setAttentionAuction(data.attentionAuction ?? null);
         setGovernanceQueue(data.governanceQueue ?? null);
+        setFederationFeed(data.federationFeed ?? []);
         return;
       }
       if (dashboardRes.status !== 404) {
@@ -186,6 +201,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
       setPortfolioClear(briefData.portfolioClear ?? queueData.portfolioClear);
       setAttentionAuction(null);
       setGovernanceQueue(null);
+      setFederationFeed([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load command center");
     } finally {
@@ -394,6 +410,34 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
                 {governanceQueue.sealsDue.length === 0 && <p className="wiki-empty">None due</p>}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {federationFeed.length > 0 && (
+        <div className="command-section-block" data-testid="federation-feed">
+          <h3>Vertical federation</h3>
+          <div className="command-card-grid">
+            {federationFeed.map((event) => (
+              <button
+                key={event.id}
+                type="button"
+                className={`command-card federation-card status-${event.status}`}
+                onClick={() =>
+                  event.entityId
+                    ? goToLink(`#/entities/${event.entityId}/diagnostics`, event.entityId)
+                    : undefined
+                }
+              >
+                <span className="command-card-label">
+                  {event.vertical} · {event.eventType}
+                </span>
+                <small>
+                  {event.sourceSystem} · {event.status} · {new Date(event.receivedAt).toLocaleString()}
+                </small>
+                {event.effects[0] && <small>{event.effects[0].detail}</small>}
+              </button>
+            ))}
           </div>
         </div>
       )}

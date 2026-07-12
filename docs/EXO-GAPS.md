@@ -6,16 +6,20 @@ literal current state, so a director (or the next agent) knows exactly where the
 
 ## Federation
 
-"Federated Canon Wiki" (`docs/TRUST.md`, migration `019_federated_wiki.sql`) is federated
-*within one RareCrest deployment* — verticals and entities share one wiki system of record with
-namespace/tenancy isolation. There is **no** federation *across* separate RareCrest
-deployments: no instance-to-instance sync, no partner-org contribution path, no signed
-cross-instance provenance for a wiki page or decision trace that originated somewhere else.
-`packages/wiki/src/obsidian-sync.ts` is a one-way, single-director, encrypted-vault-package
-export — an offline satellite for one human, not a federation protocol between organizations
-or RareCrest instances. If multi-instance federation is ever needed (e.g., a partner nonprofit
-running its own RareCrest and syncing canon with the holding layer), it does not exist today and
-would need its own trust model, not an extension of the current single-deployment tenancy model.
+**Shipped (vertical product → holding SoR):** HMAC-authenticated ingress at
+`POST /api/v1/federation/ingress/:vertical` (migration `030_vertical_federation.sql`).
+Verticals can push `heartbeat`, `metric.record`, `attention.raise`, and
+`alert.escalate` into an idempotent ledger that feeds holding metrics and the
+attention queue. Contract: `docs/VERTICAL-FEDERATION.md`. Command Center shows
+`federationFeed`.
+
+**Still a gap (multi-instance):** There is **no** federation *across* separate
+RareCrest deployments: no instance-to-instance sync, no partner-org contribution
+path, no signed cross-instance provenance for a wiki page or decision trace that
+originated somewhere else. `packages/wiki/src/obsidian-sync.ts` remains a one-way,
+single-director, encrypted-vault-package export — an offline satellite for one
+human, not a federation protocol between organizations. If multi-instance
+federation is ever needed, it needs its own trust model.
 
 ## Mobile
 

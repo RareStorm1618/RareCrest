@@ -46,6 +46,7 @@ import { registerOfficerRoutes } from "./routes/officer-routes.js";
 import { registerParliamentRoutes } from "./routes/parliament-routes.js";
 import { registerDoctrineRoutes } from "./routes/doctrine-routes.js";
 import { registerHoldingMetricsRoutes } from "./routes/holding-metrics-routes.js";
+import { registerFederationRoutes } from "./routes/federation-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import {
@@ -56,6 +57,7 @@ import {
 import { loadSecret } from "./secrets.js";
 import { renderMetricsText } from "./observability.js";
 import { pathToFileURL } from "node:url";
+import { Readable } from "node:stream";
 import { z } from "zod";
 
 const PORT = Number(process.env.API_PORT ?? 3000);
@@ -82,8 +84,24 @@ export async function buildApp() {
 
   await app.register(cors, { origin: corsOriginOption(HOST) });
 
+  /** Preserve raw body bytes for HMAC verification on vertical federation ingress. */
+  app.addHook("preParsing", async (request, _reply, payload) => {
+    const path = request.url.split("?")[0] ?? "";
+    if (!path.startsWith("/api/v1/federation/ingress/")) return payload;
+    const chunks: Buffer[] = [];
+    for await (const chunk of payload) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    }
+    const raw = Buffer.concat(chunks);
+    (request as { rawBody?: string }).rawBody = raw.toString("utf8");
+    return Readable.from(raw);
+  });
+
   app.addHook("preHandler", async (request) => {
-    if (request.url === "/health" || request.url === "/metrics") return;
+    const path = request.url.split("?")[0] ?? "";
+    if (path === "/health" || path === "/metrics" || path.startsWith("/api/v1/federation/ingress/")) {
+      return;
+    }
     request.auth = await resolveAuth(request, { db });
   });
 
@@ -141,6 +159,7 @@ export async function buildApp() {
   registerParliamentRoutes(app, db, intelligence);
   registerDoctrineRoutes(app, db);
   registerHoldingMetricsRoutes(app, db);
+  registerFederationRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {
