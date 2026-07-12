@@ -217,10 +217,16 @@ importers:
 
   packages/command-surface:
     dependencies:
+      '@rarecrest/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@rarecrest/portfolio':
         specifier: workspace:*
         version: link:../portfolio
     devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
