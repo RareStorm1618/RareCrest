@@ -380,3 +380,52 @@ ul[role="alert"] { color: #ff6b6b; }
   .entity-register-form { grid-template-columns: 1fr; }
 }
 
+.result-card {
+  background: #151821; border: 1px solid #2f3648; border-radius: 6px; padding: 0.85rem;
+  display: grid; gap: 0.6rem; margin-top: 0.75rem;
+}
+.result-card h4 { margin: 0; color: #e8eaed; }
+.result-card-summary { color: #b8c0cc; margin: 0; }
+.result-card-metrics {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem; margin: 0;
+}
+.result-card-metric { background: #0f131b; border: 1px solid #2a3040; border-radius: 4px; padding: 0.5rem 0.65rem; }
+.result-card-metric dt { color: #6f788a; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; margin: 0; }
+.result-card-metric dd { margin: 0.15rem 0 0; color: #e8ecf3; font-size: 0.95rem; }
+.result-card-raw { color: #9aa3b2; font-size: 0.8rem; }
+.result-card-raw summary { cursor: pointer; }
+.result-card-raw pre { margin-top: 0.5rem; }
+
+.director-tools {
+  margin-top: 1.5rem; background: #10141c; border: 1px solid #2a3040; border-radius: 6px; padding: 0.85rem;
+}
+.director-tools > summary { cursor: pointer; font-weight: 600; color: #d5dae3; list-style: none; }
+.director-tools > summary::-webkit-details-marker { display: none; }
+.director-tools > summary::before { content: "▸ "; color: #6f788a; }
+.director-tools[open] > summary::before { content: "▾ "; }
+.director-tools-body { display: grid; gap: 1.25rem; margin-top: 1rem; }
+.director-tools-section {
+  background: #151821; border: 1px solid #2f3648; border-radius: 6px; padding: 0.85rem;
+  display: grid; gap: 0.6rem;
+}
+.director-tools-section h4, .director-tools-section h5 {
+  margin: 0; color: #9aa3b2; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.director-tools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem; }
+.director-tools-section label { display: flex; flex-direction: column; gap: 0.3rem; color: #b8c0cc; font-size: 0.85rem; }
+.director-tools-section input, .director-tools-section select, .director-tools-section textarea {
+  background: #0f131b; border: 1px solid #2f3648; color: #e8ecf3; border-radius: 4px; padding: 0.5rem 0.65rem; font: inherit;
+}
+.director-tools-section button {
+  background: #4a9eff; border: none; color: #fff; border-radius: 4px; padding: 0.5rem 1rem;
+  cursor: pointer; font: inherit; width: fit-content;
+}
+.director-tools-section button:disabled { opacity: 0.5; cursor: not-allowed; }
+.contradiction-list, .human-instructions-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.contradiction-list li, .human-instructions-list li {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  background: #0f131b; border: 1px solid #2f3648; border-radius: 4px; padding: 0.5rem 0.65rem; font-size: 0.85rem; color: #d5dae3;
+}
+.human-instructions-list li.revoked { opacity: 0.55; }
+.human-instructions-list small { display: block; color: #6f788a; }
+

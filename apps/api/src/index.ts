@@ -40,6 +40,8 @@ import { registerPhiVaultRoutes } from "./routes/phi-vault-routes.js";
 import { registerAuthRevocationRoutes } from "./routes/auth-revocation-routes.js";
 import { registerWikiRoutes } from "./routes/wiki-routes.js";
 import { registerJobsRoutes } from "./routes/jobs-routes.js";
+import { registerHumanInstructionRoutes } from "./routes/human-instruction-routes.js";
+import { registerOpsRoutes } from "./routes/ops-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
 import {
@@ -129,6 +131,8 @@ export async function buildApp() {
   registerAuthRevocationRoutes(app, db);
   registerWikiRoutes(app, db);
   registerJobsRoutes(app, db, intelligence);
+  registerHumanInstructionRoutes(app, db);
+  registerOpsRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface AgentBlueprintFormProps {
   entityId: string;
@@ -8,10 +9,19 @@ interface AgentBlueprintFormProps {
 
 const LAYERS = ["signals", "models", "workflows", "governance"] as const;
 
+interface AgentBlueprintResult {
+  blueprintStatus?: string;
+  stack?: {
+    selectedLayers?: string[];
+    missingLayers?: string[];
+    deployable?: boolean;
+  };
+}
+
 export function AgentBlueprintForm({ entityId, apiBase, headers }: AgentBlueprintFormProps) {
   const [selectedLayers, setSelectedLayers] = useState<string[]>(["signals", "models"]);
   const [humanReviewRequired, setHumanReviewRequired] = useState(true);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<AgentBlueprintResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
@@ -26,8 +36,17 @@ export function AgentBlueprintForm({ entityId, apiBase, headers }: AgentBlueprin
       setError((body as { message?: string }).message ?? "Blueprint request failed");
       return;
     }
-    setResult(body);
+    setResult(body as AgentBlueprintResult);
   };
+
+  const metrics: ResultCardMetric[] | undefined = result
+    ? [
+        { label: "Status", value: result.blueprintStatus ?? "—" },
+        { label: "Deployable", value: result.stack?.deployable ? "Yes" : "No" },
+        { label: "Selected layers", value: result.stack?.selectedLayers?.join(", ") || "None" },
+        { label: "Missing layers", value: result.stack?.missingLayers?.join(", ") || "None" },
+      ]
+    : undefined;
 
   return (
     <section className="agent-blueprint-form" data-testid="agent-blueprint-form">
@@ -61,7 +80,7 @@ export function AgentBlueprintForm({ entityId, apiBase, headers }: AgentBlueprin
       <button type="button" onClick={submit}>
         Build blueprint
       </button>
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result && <ResultCard title="Agent Blueprint" metrics={metrics} raw={result} />}
       {error && <p role="alert">{error}</p>}
     </section>
   );

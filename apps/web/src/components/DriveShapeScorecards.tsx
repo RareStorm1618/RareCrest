@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface DriveShapeScorecardsProps {
   entityId: string;
@@ -6,12 +7,18 @@ interface DriveShapeScorecardsProps {
   headers: Record<string, string>;
 }
 
+interface DriveShapeResult {
+  score?: number;
+  profile?: string;
+  notes?: string[];
+}
+
 export function DriveShapeScorecards({ entityId, apiBase, headers }: DriveShapeScorecardsProps) {
   const [clarity, setClarity] = useState(6);
   const [speed, setSpeed] = useState(6);
   const [resilience, setResilience] = useState(6);
   const [leverage, setLeverage] = useState(6);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<DriveShapeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const score = async () => {
@@ -26,8 +33,15 @@ export function DriveShapeScorecards({ entityId, apiBase, headers }: DriveShapeS
       setError((body as { message?: string }).message ?? "Drive-shape scoring failed");
       return;
     }
-    setResult(body);
+    setResult(body as DriveShapeResult);
   };
+
+  const metrics: ResultCardMetric[] | undefined = result
+    ? [
+        { label: "Score", value: result.score ?? "—" },
+        { label: "Profile", value: result.profile ?? "—" },
+      ]
+    : undefined;
 
   return (
     <section className="drive-shape-scorecards" data-testid="drive-shape-scorecards">
@@ -51,7 +65,14 @@ export function DriveShapeScorecards({ entityId, apiBase, headers }: DriveShapeS
       <button type="button" onClick={score}>
         Score drive shape
       </button>
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result && (
+        <ResultCard
+          title="Drive Shape Scorecard"
+          summary={result.notes?.length ? result.notes.join(" • ") : undefined}
+          metrics={metrics}
+          raw={result}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

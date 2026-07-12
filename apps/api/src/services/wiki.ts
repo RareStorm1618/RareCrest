@@ -736,6 +736,58 @@ export class WikiService {
     return { flagged: true, pageA: pageASlug, pageB: pageBSlug };
   }
 
+  async listContradictions(namespace: string, includeAll = false) {
+    const result = await this.db.query(
+      `SELECT wc.id, wc.namespace, wc.claim_a AS "claimA", wc.claim_b AS "claimB", wc.status,
+              wc.created_at AS "createdAt",
+              pa.slug AS "pageASlug", pa.title AS "pageATitle",
+              pb.slug AS "pageBSlug", pb.title AS "pageBTitle"
+       FROM rarecrest.wiki_contradictions wc
+       JOIN rarecrest.wiki_pages pa ON pa.id = wc.page_a_id
+       JOIN rarecrest.wiki_pages pb ON pb.id = wc.page_b_id
+       WHERE wc.namespace = $1 AND ($2::boolean OR wc.status = 'open')
+       ORDER BY wc.created_at DESC
+       LIMIT 200`,
+      [namespace, includeAll],
+    );
+    return result.rows;
+  }
+
+  async resolveContradiction(input: {
+    id: string;
+    namespace: string;
+    resolution: "resolved" | "accepted_tension";
+    actorId: string;
+    note?: string;
+  }) {
+    const existing = await this.db.query(
+      `SELECT id, status FROM rarecrest.wiki_contradictions WHERE id = $1 AND namespace = $2`,
+      [input.id, input.namespace],
+    );
+    if (existing.rows.length === 0) throw new WikiError("Contradiction not found", 404);
+    const result = await this.db.query(
+      `UPDATE rarecrest.wiki_contradictions SET status = $2 WHERE id = $1
+       RETURNING id, namespace, claim_a AS "claimA", claim_b AS "claimB", status, created_at AS "createdAt"`,
+      [input.id, input.resolution],
+    );
+    await this.appendLog(
+      input.namespace,
+      (await this.vertical(input.namespace)) ?? "holding",
+      "contradiction_resolve",
+      `id=${input.id} resolution=${input.resolution}${input.note ? ` note=${input.note}` : ""}`,
+      input.actorId,
+    );
+    return result.rows[0];
+  }
+
+  private async vertical(namespace: string): Promise<VerticalKey | null> {
+    const row = await this.db.query(
+      `SELECT vertical FROM rarecrest.wiki_pages WHERE namespace = $1 LIMIT 1`,
+      [namespace],
+    );
+    return (row.rows[0]?.vertical as VerticalKey | undefined) ?? null;
+  }
+
   async promote(input: {
     namespace: string;
     slug: string;

@@ -12,6 +12,23 @@ import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { isVerifiedDirector } from "../trust.js";
 
+/** AC-CMD-001: agent_roster activity → morning-brief agent_activity section. */
+export function mapAgentActivity(
+  rows: Array<Record<string, unknown>>,
+): Array<{ id: string; label: string; linkPath: string; sourceFeature: string }> {
+  return rows.map((row) => {
+    const agentId = String(row.agent_id);
+    const entityId = String(row.entity_id);
+    const activity = row.current_activity ? String(row.current_activity) : `${row.status}/${row.health}`;
+    return {
+      id: `${agentId}:${entityId}`,
+      label: `${agentId} — ${activity}`,
+      linkPath: `#/entities/${entityId}/runtime`,
+      sourceFeature: "runtime",
+    };
+  });
+}
+
 export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) {
   async function loadAttentionQueue(vertical?: string): Promise<AttentionQueueItem[]> {
     const verticalFilter = vertical ? "AND e.vertical = $1" : "";
@@ -58,35 +75,61 @@ export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) 
       `SELECT id FROM rarecrest.attention_flags WHERE resolved_at IS NOT NULL AND resolved_at > COALESCE($1, '1970-01-01')`,
       [since?.toISOString() ?? null],
     );
+    const roster = await db.query(
+      `SELECT agent_id, entity_id, status, health, current_activity, updated_at
+       FROM rarecrest.agent_roster
+       WHERE updated_at > COALESCE($1, NOW() - INTERVAL '24 hours')
+       ORDER BY updated_at DESC LIMIT 20`,
+      [since?.toISOString() ?? null],
+    );
+    const agentActivity = mapAgentActivity(roster.rows);
     const brief = buildMorningBrief(
       since,
       newItems,
       resolved.rows.map((r) => r.id as string),
       queue.filter((q) => q.kind === "awareness"),
-      [],
+      agentActivity,
     );
     // Wiki health section (Private Canon Fortress)
     try {
       const lint = await db.query(
         `SELECT id, namespace, score, created_at FROM rarecrest.wiki_lint_reports
-         WHERE score < 80 ORDER BY created_at DESC LIMIT 8`,
+         WHERE score < 80 AND (namespace = 'holding/canon' OR namespace LIKE 'bridges/%')
+         ORDER BY created_at DESC LIMIT 8`,
       );
       const pending = await db.query(
-        `SELECT id, page_id FROM rarecrest.wiki_promotions WHERE status = 'pending_second' LIMIT 8`,
+        `SELECT wp.id, wp.page_id AS "pageId", wpg.entity_id AS "entityId"
+         FROM rarecrest.wiki_promotions wp
+         LEFT JOIN rarecrest.wiki_pages wpg ON wpg.id = wp.page_id
+         WHERE wp.status = 'pending_second' LIMIT 8`,
       );
+      const openContradictions = await db.query(
+        `SELECT COUNT(*)::int AS count FROM rarecrest.wiki_contradictions WHERE status = 'open'`,
+      );
+      const contradictionCount = Number(openContradictions.rows[0]?.count ?? 0);
       const wikiItems = [
         ...lint.rows.map((r) => ({
           id: String(r.id),
           label: `Wiki lint score ${r.score} · ${r.namespace}`,
-          linkPath: "#/",
+          linkPath: "#/command",
           sourceFeature: "wiki",
         })),
         ...pending.rows.map((r) => ({
           id: String(r.id),
           label: `Pending wiki promote dual-control`,
-          linkPath: "#/",
+          linkPath: r.entityId ? `#/entities/${r.entityId}/wiki` : "#/command",
           sourceFeature: "wiki",
         })),
+        ...(contradictionCount > 0
+          ? [
+              {
+                id: "wiki-contradictions-open",
+                label: `${contradictionCount} open wiki contradiction${contradictionCount === 1 ? "" : "s"}`,
+                linkPath: "#/command",
+                sourceFeature: "wiki",
+              },
+            ]
+          : []),
       ];
       if (wikiItems.length > 0) {
         brief.sections.push({ type: "wiki_health", items: wikiItems });

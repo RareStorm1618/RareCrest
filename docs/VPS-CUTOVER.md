@@ -119,7 +119,33 @@ owns the underlying account/MFA lifecycle (see TRUST.md §"What must remain huma
 forever"); RareCrest's revoke API is the fast-path kill for active API sessions while IdP-side
 offboarding catches up.
 
-## 9. Go-live smoke checks
+## 9. SCIM / user lifecycle
+
+RareCrest does **not** run a SCIM server in-repo, and does not plan to. The IdP is the single
+source of truth for the workforce lifecycle — provisioning, deprovisioning, group/role
+membership — and RareCrest only ever *consumes* the resulting OIDC claims.
+
+- **The IdP owns user lifecycle.** Create/suspend/delete a human's account, rotate MFA, and
+  manage group membership in the IdP (Okta, Azure AD/Entra, Auth0, etc.), not in RareCrest.
+  There is no local RareCrest user table to keep in sync — sync friction and drift are avoided
+  by never having a second copy of identity to reconcile.
+- **RareCrest consumes OIDC claims, not a SCIM feed.** Every request's `vertical` and `role`
+  come from the OIDC token (`sub`, `vertical`, `role`, `jti` — see §4 above), resolved fresh on
+  each request. Map IdP groups to RareCrest's `role`/`vertical` claims at the IdP's claim-mapping
+  layer (e.g. an Okta group `rarecrest-director-holding` → claims `role=director`,
+  `vertical=holding`); RareCrest never has to be told about a group change directly.
+- **Offboarding is immediate and fail-closed even before the IdP finishes propagating.** Two
+  layers, not one:
+  1. Suspend/delete the account at the IdP (the durable, source-of-truth action).
+  2. Call the fast-path kill described in §8 above — `POST /api/v1/auth/revoke` — so active
+     sessions/tokens are denylisted immediately, without waiting on IdP-side token expiry or
+     propagation delay.
+- **No SCIM server, no local roster, by design.** If a future integration needs SCIM
+  provisioning (e.g. auto-creating IdP accounts from an HR system), that belongs in the IdP or a
+  dedicated identity broker in front of it — never inside RareCrest's trust boundary. RareCrest
+  stays a claims consumer, never an identity source of record.
+
+## 10. Go-live smoke checks
 
 - `GET /health` returns `status: "ok"` with `database`, `governance`, `intelligence` all `true`
 - `GET /metrics` shows `rarecrest_auth_failures_total`, `rarecrest_rbac_denials_total`, and

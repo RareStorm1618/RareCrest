@@ -45,6 +45,18 @@ interface EncryptionLayerStatus {
   encryptionLayerPresent: boolean;
 }
 
+interface HumanInstructionRow {
+  id: string;
+  entityId: string;
+  vertical: string;
+  actorId: string;
+  actionScope: string;
+  instruction: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
 type KillSwitchAction = "arm" | "trigger" | "disarm";
 
 export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }: RuntimeOperationsPageProps) {
@@ -58,6 +70,15 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [actionScope, setActionScope] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [expiresInHours, setExpiresInHours] = useState(24);
+  const [humanInstructions, setHumanInstructions] = useState<HumanInstructionRow[]>([]);
+  const [humanInstructionsUnavailable, setHumanInstructionsUnavailable] = useState(false);
+  const [instructionBusy, setInstructionBusy] = useState(false);
+  const [instructionError, setInstructionError] = useState<string | null>(null);
+  const [instructionStatus, setInstructionStatus] = useState<string | null>(null);
 
   const jsonHeaders = { ...headers, "Content-Type": "application/json" };
 
@@ -96,6 +117,95 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadHumanInstructions = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `${apiBase}/api/v1/human-instructions?entityId=${encodeURIComponent(entityId)}`,
+        { headers },
+      );
+      if (res.status === 404) {
+        setHumanInstructionsUnavailable(true);
+        setHumanInstructions([]);
+        return;
+      }
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { instructions?: HumanInstructionRow[] };
+      setHumanInstructions(data.instructions ?? []);
+      setHumanInstructionsUnavailable(false);
+    } catch {
+      setHumanInstructionsUnavailable(true);
+      setHumanInstructions([]);
+    }
+  }, [apiBase, entityId, headers]);
+
+  useEffect(() => {
+    loadHumanInstructions();
+  }, [loadHumanInstructions]);
+
+  const createHumanInstruction = async () => {
+    if (!actionScope.trim() || !instruction.trim()) return;
+    setInstructionBusy(true);
+    setInstructionError(null);
+    setInstructionStatus(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/human-instructions`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          entityId,
+          actionScope: actionScope.trim(),
+          instruction: instruction.trim(),
+          expiresInHours,
+        }),
+      });
+      if (res.status === 404) {
+        setHumanInstructionsUnavailable(true);
+        setInstructionError("Human instructions API is not deployed yet");
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? "Create human instruction failed");
+      }
+      setInstructionStatus("Human instruction recorded");
+      setActionScope("");
+      setInstruction("");
+      setExpiresInHours(24);
+      await loadHumanInstructions();
+    } catch (err) {
+      setInstructionError(err instanceof Error ? err.message : "Create human instruction failed");
+    } finally {
+      setInstructionBusy(false);
+    }
+  };
+
+  const revokeHumanInstruction = async (id: string) => {
+    setInstructionBusy(true);
+    setInstructionError(null);
+    setInstructionStatus(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/human-instructions/${id}/revoke`, {
+        method: "POST",
+        headers: jsonHeaders,
+      });
+      if (res.status === 404) {
+        setHumanInstructionsUnavailable(true);
+        setInstructionError("Human instructions API is not deployed yet");
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? "Revoke human instruction failed");
+      }
+      setInstructionStatus("Human instruction revoked");
+      await loadHumanInstructions();
+    } catch (err) {
+      setInstructionError(err instanceof Error ? err.message : "Revoke human instruction failed");
+    } finally {
+      setInstructionBusy(false);
+    }
+  };
 
   const runKillSwitchAction = async (action: KillSwitchAction) => {
     if (!reason.trim()) {
@@ -312,6 +422,93 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="runtime-section" data-testid="human-instructions-panel">
+        <h3>Human instructions</h3>
+        <p className="phi-note">
+          The durable authorization record behind every financial/held-action release —
+          resolving a held action never accepts a bare client-supplied id.
+        </p>
+        <label>
+          Action scope
+          <input
+            value={actionScope}
+            onChange={(e) => setActionScope(e.target.value)}
+            placeholder="e.g. treasury_transfer"
+            disabled={instructionBusy}
+          />
+        </label>
+        <label>
+          Instruction
+          <textarea
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder="What the human is authorizing, and for what scope"
+            rows={3}
+            disabled={instructionBusy}
+          />
+        </label>
+        <label>
+          Expires in (hours)
+          <input
+            type="number"
+            min={1}
+            max={168}
+            value={expiresInHours}
+            onChange={(e) => setExpiresInHours(Number(e.target.value))}
+            disabled={instructionBusy}
+          />
+        </label>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={createHumanInstruction}
+            disabled={instructionBusy || !actionScope.trim() || !instruction.trim()}
+          >
+            Record instruction
+          </button>
+        </div>
+        {instructionStatus && <p className="wiki-status">{instructionStatus}</p>}
+        {instructionError && (
+          <p className="wiki-error" role="alert">
+            {instructionError}
+          </p>
+        )}
+
+        {humanInstructionsUnavailable ? (
+          <p className="wiki-empty">Human instructions API is not deployed yet.</p>
+        ) : humanInstructions.length === 0 ? (
+          <p className="wiki-empty">No human instructions recorded for this entity.</p>
+        ) : (
+          <ul className="human-instructions-list">
+            {humanInstructions.map((row) => {
+              const revoked = Boolean(row.revokedAt);
+              const expired = !revoked && new Date(row.expiresAt).getTime() <= Date.now();
+              return (
+                <li key={row.id} className={revoked ? "revoked" : undefined}>
+                  <span>
+                    <strong>{row.actionScope}</strong> — {row.instruction}
+                    <small>
+                      Expires {new Date(row.expiresAt).toLocaleString()}
+                      {revoked && " — REVOKED"}
+                      {expired && !revoked && " — EXPIRED"}
+                    </small>
+                  </span>
+                  {!revoked && (
+                    <button
+                      type="button"
+                      onClick={() => revokeHumanInstruction(row.id)}
+                      disabled={instructionBusy}
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </section>

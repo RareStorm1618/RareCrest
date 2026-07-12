@@ -1,9 +1,18 @@
 import { useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface DataGovernanceBinderProps {
   entityId: string;
   apiBase: string;
   headers: Record<string, string>;
+}
+
+interface DataGovernanceResult {
+  binder?: {
+    assets?: unknown[];
+    policyFlags?: string[];
+    compliant?: boolean;
+  };
 }
 
 export function DataGovernanceBinder({ entityId, apiBase, headers }: DataGovernanceBinderProps) {
@@ -13,7 +22,7 @@ export function DataGovernanceBinder({ entityId, apiBase, headers }: DataGoverna
   const [assets, setAssets] = useState<
     Array<{ id: string; name: string; sensitivity: string; encryptedAtRest: boolean }>
   >([]);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<DataGovernanceResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const addAsset = () => {
@@ -43,8 +52,16 @@ export function DataGovernanceBinder({ entityId, apiBase, headers }: DataGoverna
       setError((body as { message?: string }).message ?? "Data governance binder failed");
       return;
     }
-    setResult(body);
+    setResult(body as DataGovernanceResult);
   };
+
+  const metrics: ResultCardMetric[] | undefined = result
+    ? [
+        { label: "Compliant", value: result.binder?.compliant ? "Yes" : "No" },
+        { label: "Assets", value: result.binder?.assets?.length ?? 0 },
+        { label: "Policy flags", value: result.binder?.policyFlags?.length ?? 0 },
+      ]
+    : undefined;
 
   return (
     <section className="data-governance-binder" data-testid="data-governance-binder">
@@ -77,7 +94,18 @@ export function DataGovernanceBinder({ entityId, apiBase, headers }: DataGoverna
         Bind governance
       </button>
       {assets.length > 0 && <pre>{JSON.stringify(assets, null, 2)}</pre>}
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result && (
+        <ResultCard
+          title="Data Governance Binder"
+          summary={
+            result.binder?.policyFlags?.length
+              ? result.binder.policyFlags.join("; ")
+              : "No policy flags"
+          }
+          metrics={metrics}
+          raw={result}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

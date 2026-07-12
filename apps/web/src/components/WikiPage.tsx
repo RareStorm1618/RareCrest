@@ -24,9 +24,25 @@ interface QueryCitation {
   score?: number;
 }
 
+const BRIDGE_VERTICALS = ["rarestorm", "rareangels", "rareedge", "hopecoin", "healkids", "holding"] as const;
+
+interface ContradictionRow {
+  id: string;
+  namespace?: string;
+  pageASlug?: string;
+  pageATitle?: string;
+  pageBSlug?: string;
+  pageBTitle?: string;
+  claimA?: string;
+  claimB?: string;
+  status?: string;
+  createdAt?: string;
+}
+
 export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: WikiPageProps) {
   const isAgentRole = headers["x-user-role"] === "agent";
   const [namespace, setNamespace] = useState(`entity/${entityId}/working`);
+  const [activeVertical, setActiveVertical] = useState(vertical);
   const [pages, setPages] = useState<WikiPageRow[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [pageBody, setPageBody] = useState<string>("");
@@ -40,20 +56,45 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [directorOpen, setDirectorOpen] = useState(false);
+
+  const [bridgeFromVertical, setBridgeFromVertical] = useState<string>(vertical);
+  const [bridgeToVertical, setBridgeToVertical] = useState<string>("holding");
+  const [bridgeTitle, setBridgeTitle] = useState("");
+  const [bridgeBody, setBridgeBody] = useState("");
+  const [bridgeSlug, setBridgeSlug] = useState<string | null>(null);
+  const [bridgeError, setBridgeError] = useState<string | null>(null);
+  const [bridgeBusy, setBridgeBusy] = useState(false);
+
+  const [contradictionPageA, setContradictionPageA] = useState("");
+  const [contradictionPageB, setContradictionPageB] = useState("");
+  const [contradictionClaimA, setContradictionClaimA] = useState("");
+  const [contradictionClaimB, setContradictionClaimB] = useState("");
+  const [contradictionStatus, setContradictionStatus] = useState<string | null>(null);
+  const [contradictionError, setContradictionError] = useState<string | null>(null);
+  const [contradictionBusy, setContradictionBusy] = useState(false);
+  const [contradictions, setContradictions] = useState<ContradictionRow[]>([]);
+  const [contradictionsListError, setContradictionsListError] = useState<string | null>(null);
+
   const jsonHeaders = useMemo(
     () => ({ ...headers, "Content-Type": "application/json", Accept: "application/json" }),
     [headers],
   );
 
+  useEffect(() => {
+    setActiveVertical(vertical);
+    setBridgeFromVertical(vertical);
+  }, [vertical, entityId]);
+
   const loadPages = useCallback(async (ns: string) => {
     const url = new URL(`${apiBase}/api/v1/wiki/pages`);
     url.searchParams.set("namespace", ns);
-    url.searchParams.set("vertical", vertical);
+    url.searchParams.set("vertical", activeVertical);
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(await res.text());
     const data = (await res.json()) as { pages: WikiPageRow[] };
     setPages(data.pages ?? []);
-  }, [apiBase, headers, vertical]);
+  }, [apiBase, headers, activeVertical]);
 
   const resolveNamespace = useCallback(async () => {
     const res = await fetch(`${apiBase}/api/v1/wiki/namespace`, {
@@ -91,7 +132,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
     try {
       const url = new URL(`${apiBase}/api/v1/wiki/pages/${encodeURIComponent(slug)}`);
       url.searchParams.set("namespace", namespace);
-      url.searchParams.set("vertical", vertical);
+      url.searchParams.set("vertical", activeVertical);
       const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { body: string; title: string };
@@ -111,7 +152,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
       const res = await fetch(`${apiBase}/api/v1/wiki/query`, {
         method: "POST",
         headers: jsonHeaders,
-        body: JSON.stringify({ namespace, vertical, question, fileAnswer: true }),
+        body: JSON.stringify({ namespace, vertical: activeVertical, question, fileAnswer: true }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { answer: string; citations: QueryCitation[] };
@@ -161,7 +202,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
     try {
       const url = new URL(`${apiBase}/api/v1/wiki/doctor`);
       url.searchParams.set("namespace", namespace);
-      url.searchParams.set("vertical", vertical);
+      url.searchParams.set("vertical", activeVertical);
       const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(await res.text());
       setDoctor((await res.json()) as Record<string, unknown>);
@@ -182,7 +223,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
         headers: jsonHeaders,
         body: JSON.stringify({
           namespace,
-          vertical,
+          vertical: activeVertical,
           slug: selectedSlug,
           reason: "Director promote from Wiki Companion",
         }),
@@ -282,7 +323,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
       const res = await fetch(`${apiBase}/api/v1/wiki/lint`, {
         method: "POST",
         headers: jsonHeaders,
-        body: JSON.stringify({ namespace, vertical }),
+        body: JSON.stringify({ namespace, vertical: activeVertical }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { score: number; findings: unknown[] };
@@ -291,6 +332,164 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
       setError(err instanceof Error ? err.message : "Lint failed");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const switchToEntityWorking = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setActiveVertical(vertical);
+      const ns = await resolveNamespace();
+      const url = new URL(`${apiBase}/api/v1/wiki/pages`);
+      url.searchParams.set("namespace", ns);
+      url.searchParams.set("vertical", vertical);
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { pages: WikiPageRow[] };
+      setPages(data.pages ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to switch to entity working namespace");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const switchToHoldingCanon = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setNamespace("holding/canon");
+      setActiveVertical("holding");
+      const url = new URL(`${apiBase}/api/v1/wiki/pages`);
+      url.searchParams.set("namespace", "holding/canon");
+      url.searchParams.set("vertical", "holding");
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { pages: WikiPageRow[] };
+      setPages(data.pages ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to switch to holding canon (director + holding vertical only)");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createBridge = async () => {
+    if (!bridgeTitle.trim() || !bridgeBody.trim()) return;
+    setBridgeBusy(true);
+    setBridgeError(null);
+    setBridgeSlug(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/wiki/bridges`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          fromVertical: bridgeFromVertical,
+          toVertical: bridgeToVertical,
+          title: bridgeTitle,
+          redactedBody: bridgeBody,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { page?: { slug?: string } };
+      setBridgeSlug(data.page?.slug ?? null);
+      setBridgeTitle("");
+      setBridgeBody("");
+    } catch (err) {
+      setBridgeError(err instanceof Error ? err.message : "Bridge projection failed (director only)");
+    } finally {
+      setBridgeBusy(false);
+    }
+  };
+
+  const loadContradictions = useCallback(async () => {
+    try {
+      const url = new URL(`${apiBase}/api/v1/wiki/contradictions`);
+      url.searchParams.set("namespace", namespace);
+      url.searchParams.set("vertical", activeVertical);
+      const res = await fetch(url, { headers });
+      if (res.status === 404) {
+        // Tolerate environments where this endpoint hasn't shipped yet.
+        setContradictionsListError("Contradictions list unavailable — API not deployed yet");
+        setContradictions([]);
+        return;
+      }
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { contradictions?: ContradictionRow[] };
+      setContradictions(data.contradictions ?? []);
+      setContradictionsListError(null);
+    } catch (err) {
+      setContradictionsListError(err instanceof Error ? err.message : "Failed to load contradictions");
+      setContradictions([]);
+    }
+  }, [apiBase, headers, namespace, activeVertical]);
+
+  useEffect(() => {
+    if (!directorOpen || isAgentRole) return;
+    loadContradictions();
+  }, [directorOpen, isAgentRole, loadContradictions]);
+
+  const createContradiction = async () => {
+    if (
+      !contradictionPageA.trim() ||
+      !contradictionPageB.trim() ||
+      !contradictionClaimA.trim() ||
+      !contradictionClaimB.trim()
+    ) {
+      return;
+    }
+    setContradictionBusy(true);
+    setContradictionError(null);
+    setContradictionStatus(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/wiki/contradictions`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          namespace,
+          vertical: activeVertical,
+          pageASlug: contradictionPageA,
+          pageBSlug: contradictionPageB,
+          claimA: contradictionClaimA,
+          claimB: contradictionClaimB,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setContradictionStatus("Contradiction flagged on both pages");
+      setContradictionPageA("");
+      setContradictionPageB("");
+      setContradictionClaimA("");
+      setContradictionClaimB("");
+      await loadContradictions();
+    } catch (err) {
+      setContradictionError(err instanceof Error ? err.message : "Flag contradiction failed");
+    } finally {
+      setContradictionBusy(false);
+    }
+  };
+
+  const resolveContradiction = async (id: string) => {
+    const note = window.prompt("Resolution note (optional)") ?? undefined;
+    try {
+      const res = await fetch(`${apiBase}/api/v1/wiki/contradictions/${encodeURIComponent(id)}/resolve`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          namespace,
+          vertical: activeVertical,
+          resolution: "resolved",
+          note: note?.trim() || undefined,
+        }),
+      });
+      if (res.status === 404) {
+        setContradictionsListError("Resolve endpoint unavailable — API not deployed yet");
+        return;
+      }
+      if (!res.ok) throw new Error(await res.text());
+      await loadContradictions();
+    } catch (err) {
+      setContradictionsListError(err instanceof Error ? err.message : "Resolve contradiction failed");
     }
   };
 
@@ -413,6 +612,189 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
           </div>
         </div>
       </div>
+
+      {!isAgentRole && (
+        <details
+          className="director-tools"
+          data-testid="director-tools"
+          onToggle={(e) => setDirectorOpen((e.target as HTMLDetailsElement).open)}
+        >
+          <summary>Director tools</summary>
+          <div className="director-tools-body">
+            <section className="director-tools-section">
+              <h4>Namespace</h4>
+              <div className="wiki-toolbar">
+                <button
+                  type="button"
+                  className={namespace !== "holding/canon" ? "active" : undefined}
+                  disabled={busy}
+                  onClick={switchToEntityWorking}
+                >
+                  Entity working
+                </button>
+                <button
+                  type="button"
+                  className={namespace === "holding/canon" ? "active" : undefined}
+                  disabled={busy}
+                  onClick={switchToHoldingCanon}
+                >
+                  Holding canon
+                </button>
+              </div>
+            </section>
+
+            <section className="director-tools-section" data-testid="bridge-projection-form">
+              <h4>Bridge projection</h4>
+              <div className="director-tools-grid">
+                <label>
+                  From vertical
+                  <select
+                    value={bridgeFromVertical}
+                    onChange={(e) => setBridgeFromVertical(e.target.value)}
+                    disabled={bridgeBusy}
+                  >
+                    {BRIDGE_VERTICALS.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  To vertical
+                  <select
+                    value={bridgeToVertical}
+                    onChange={(e) => setBridgeToVertical(e.target.value)}
+                    disabled={bridgeBusy}
+                  >
+                    {BRIDGE_VERTICALS.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label>
+                Title
+                <input
+                  value={bridgeTitle}
+                  onChange={(e) => setBridgeTitle(e.target.value)}
+                  disabled={bridgeBusy}
+                  placeholder="Bridge projection title"
+                />
+              </label>
+              <label>
+                Redacted body
+                <textarea
+                  value={bridgeBody}
+                  onChange={(e) => setBridgeBody(e.target.value)}
+                  disabled={bridgeBusy}
+                  placeholder="Cross-vertical safe, redacted summary"
+                  rows={4}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={bridgeBusy || !bridgeTitle.trim() || !bridgeBody.trim()}
+                onClick={createBridge}
+              >
+                Create bridge projection
+              </button>
+              {bridgeSlug && (
+                <p className="wiki-status">
+                  Bridge created: <code>{bridgeSlug}</code>
+                </p>
+              )}
+              {bridgeError && (
+                <p className="wiki-error" role="alert">
+                  {bridgeError}
+                </p>
+              )}
+            </section>
+
+            <section className="director-tools-section" data-testid="contradictions-panel">
+              <h4>Contradictions</h4>
+              <div className="director-tools-grid">
+                <label>
+                  Page A slug
+                  <input
+                    value={contradictionPageA}
+                    onChange={(e) => setContradictionPageA(e.target.value)}
+                    disabled={contradictionBusy}
+                  />
+                </label>
+                <label>
+                  Page B slug
+                  <input
+                    value={contradictionPageB}
+                    onChange={(e) => setContradictionPageB(e.target.value)}
+                    disabled={contradictionBusy}
+                  />
+                </label>
+                <label>
+                  Claim A
+                  <input
+                    value={contradictionClaimA}
+                    onChange={(e) => setContradictionClaimA(e.target.value)}
+                    disabled={contradictionBusy}
+                  />
+                </label>
+                <label>
+                  Claim B
+                  <input
+                    value={contradictionClaimB}
+                    onChange={(e) => setContradictionClaimB(e.target.value)}
+                    disabled={contradictionBusy}
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                disabled={
+                  contradictionBusy ||
+                  !contradictionPageA.trim() ||
+                  !contradictionPageB.trim() ||
+                  !contradictionClaimA.trim() ||
+                  !contradictionClaimB.trim()
+                }
+                onClick={createContradiction}
+              >
+                Flag contradiction
+              </button>
+              {contradictionStatus && <p className="wiki-status">{contradictionStatus}</p>}
+              {contradictionError && (
+                <p className="wiki-error" role="alert">
+                  {contradictionError}
+                </p>
+              )}
+
+              <h5>Open contradictions</h5>
+              {contradictionsListError && <p className="wiki-empty">{contradictionsListError}</p>}
+              {!contradictionsListError && contradictions.length === 0 && (
+                <p className="wiki-empty">No open contradictions.</p>
+              )}
+              {contradictions.length > 0 && (
+                <ul className="contradiction-list">
+                  {contradictions.map((c) => (
+                    <li key={c.id}>
+                      <span>
+                        {c.pageATitle ?? c.pageASlug ?? "?"} ↔ {c.pageBTitle ?? c.pageBSlug ?? "?"}
+                        {c.status && c.status !== "open" && ` (${c.status})`}
+                      </span>
+                      {(!c.status || c.status === "open") && (
+                        <button type="button" onClick={() => resolveContradiction(c.id)}>
+                          Resolve
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </details>
+      )}
     </section>
   );
 }

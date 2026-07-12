@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface PurposeProtocolEditorProps {
   entityId: string;
@@ -6,11 +7,18 @@ interface PurposeProtocolEditorProps {
   headers: Record<string, string>;
 }
 
+interface PurposeProtocolResult {
+  mission?: string;
+  nonNegotiables?: string[];
+  successSignals?: string[];
+  checks?: { missionPresent?: boolean; hasNonNegotiables?: boolean; hasSuccessSignals?: boolean };
+}
+
 export function PurposeProtocolEditor({ entityId, apiBase, headers }: PurposeProtocolEditorProps) {
   const [mission, setMission] = useState("");
   const [nonNegotiables, setNonNegotiables] = useState("");
   const [successSignals, setSuccessSignals] = useState("");
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<PurposeProtocolResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
@@ -29,8 +37,16 @@ export function PurposeProtocolEditor({ entityId, apiBase, headers }: PurposePro
       setError((body as { message?: string }).message ?? "Purpose protocol request failed");
       return;
     }
-    setResult(body);
+    setResult(body as PurposeProtocolResult);
   };
+
+  const metrics: ResultCardMetric[] | undefined = result
+    ? [
+        { label: "Mission set", value: result.checks?.missionPresent ? "Yes" : "No" },
+        { label: "Non-negotiables", value: result.nonNegotiables?.length ?? 0 },
+        { label: "Success signals", value: result.successSignals?.length ?? 0 },
+      ]
+    : undefined;
 
   return (
     <section className="purpose-protocol-editor" data-testid="purpose-protocol-editor">
@@ -50,7 +66,14 @@ export function PurposeProtocolEditor({ entityId, apiBase, headers }: PurposePro
       <button type="button" onClick={submit}>
         Build purpose protocol
       </button>
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result && (
+        <ResultCard
+          title="Purpose Protocol"
+          summary={result.mission ? `Mission: ${result.mission}` : undefined}
+          metrics={metrics}
+          raw={result}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

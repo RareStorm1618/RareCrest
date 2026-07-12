@@ -260,6 +260,47 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
     }
   });
 
+  app.get("/api/v1/wiki/contradictions", async (request, reply) => {
+    const q = request.query as { namespace?: string; vertical?: string; includeAll?: string };
+    if (!q.namespace || !q.vertical) return reply.status(400).send({ message: "namespace and vertical required" });
+    try {
+      enforceVerb("contradictions", request.auth, request.headers as never);
+      await assertWikiAccess(db, request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
+      const contradictions = await wiki.listContradictions(q.namespace, q.includeAll === "true");
+      return reply.send({ namespace: q.namespace, contradictions });
+    } catch (err) {
+      return mapWikiErr(err, reply);
+    }
+  });
+
+  app.post("/api/v1/wiki/contradictions/:id/resolve", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const schema = z.object({
+      namespace: z.string().min(1),
+      vertical: verticalSchema,
+      resolution: z.enum(["resolved", "accepted_tension"]),
+      note: z.string().optional(),
+    });
+    try {
+      const body = schema.parse(request.body);
+      const principal = classifyWikiPrincipal(request.auth);
+      if (principal === "agent") {
+        throw new WikiError("Contradiction resolution requires a human or director, not an agent", 403);
+      }
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
+      const resolved = await wiki.resolveContradiction({
+        id,
+        namespace: body.namespace,
+        resolution: body.resolution,
+        actorId: request.auth.userId,
+        note: body.note,
+      });
+      return reply.send(resolved);
+    } catch (err) {
+      return mapWikiErr(err, reply);
+    }
+  });
+
   app.post("/api/v1/wiki/promote", async (request, reply) => {
     const schema = z.object({
       namespace: z.string().min(1),

@@ -51,6 +51,9 @@ See [`VPS-CUTOVER.md`](./VPS-CUTOVER.md) for the concrete private-VPS deployment
 
 1. **PHI plaintext custody** — decrypt is human-only; never forward plaintext to agents.
 2. **IdP MFA / offboarding** — RareCrest honors revocations; the IdP owns workforce lifecycle.
+   There is no SCIM server in-repo: RareCrest only consumes OIDC claims (`vertical`, `role`) and
+   maps IdP groups to them at the IdP; offboarding is `POST /api/v1/auth/revoke` (see
+   [`VPS-CUTOVER.md` §9](./VPS-CUTOVER.md#9-scim--user-lifecycle)).
 3. **KMS/KEK custody** — `PHI_KMS_KEK` / cloud KMS keys live in a secrets manager, rotated by humans, never in git.
 4. **Legal/clinical judgment** — RareCrest assists; it does not replace licensed humans.
 5. **Board-level kill-switch drills** — the platform enforces dual-control; humans must rehearse it.

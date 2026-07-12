@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface IntelligenceStackModelerProps {
   entityId: string;
@@ -8,6 +9,12 @@ interface IntelligenceStackModelerProps {
 
 const LAYERS = ["signals", "models", "workflows", "governance"] as const;
 
+interface IntelligenceStackResult {
+  selectedLayers?: string[];
+  missingLayers?: string[];
+  deployable?: boolean;
+}
+
 export function IntelligenceStackModeler({
   entityId,
   apiBase,
@@ -15,7 +22,7 @@ export function IntelligenceStackModeler({
 }: IntelligenceStackModelerProps) {
   const [selectedLayers, setSelectedLayers] = useState<string[]>(["signals", "models"]);
   const [humanReviewRequired, setHumanReviewRequired] = useState(true);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<IntelligenceStackResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const toggleLayer = (layer: string) => {
@@ -36,8 +43,16 @@ export function IntelligenceStackModeler({
       setError((body as { message?: string }).message ?? "Intelligence stack request failed");
       return;
     }
-    setResult(body);
+    setResult(body as IntelligenceStackResult);
   };
+
+  const metrics: ResultCardMetric[] | undefined = result
+    ? [
+        { label: "Deployable", value: result.deployable ? "Yes" : "No" },
+        { label: "Selected layers", value: result.selectedLayers?.join(", ") || "None" },
+        { label: "Missing layers", value: result.missingLayers?.join(", ") || "None" },
+      ]
+    : undefined;
 
   return (
     <section className="intelligence-stack-modeler" data-testid="intelligence-stack-modeler">
@@ -65,7 +80,7 @@ export function IntelligenceStackModeler({
       <button type="button" onClick={submit}>
         Model stack
       </button>
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result && <ResultCard title="Intelligence Stack Plan" metrics={metrics} raw={result} />}
       {error && <p role="alert">{error}</p>}
     </section>
   );

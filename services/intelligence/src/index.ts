@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { readFileSync } from "node:fs";
 import { DatabaseClient } from "@rarecrest/db";
-import { ModelRouter } from "./model-router.js";
+import { ModelRouter, applyProviderEndpoints, parseProviderAllowlist, parseProviderEndpoints } from "./model-router.js";
 import { DecisionTraceService } from "./decision-trace.js";
 import { SkillCompanionService } from "./skill-companion.js";
 import { runEvaluation, persistEvaluationRun } from "./evaluation-runner.js";
@@ -42,12 +42,20 @@ export async function buildIntelligenceApp() {
     connectionString: process.env.INTELLIGENCE_DATABASE_URL ?? process.env.DATABASE_URL ?? "",
   });
 
+  // MODEL_PROVIDERS is an allowlist of provider ids (comma-separated; default
+  // primary,fallback,mock) — an unlisted provider is never routable even if enabled.
+  // MODEL_PROVIDER_ENDPOINTS is an optional JSON map of id -> endpoint override.
+  const providerAllowlist = parseProviderAllowlist(process.env.MODEL_PROVIDERS);
+  const providerEndpoints = parseProviderEndpoints(process.env.MODEL_PROVIDER_ENDPOINTS);
+  const baseProviders = [
+    { id: "primary", name: "Primary", endpoint: "http://localhost", priority: 1, enabled: true },
+    { id: "fallback", name: "Fallback", endpoint: "http://localhost", priority: 2, enabled: true },
+    { id: "mock", name: "Mock", endpoint: "http://localhost", priority: 3, enabled: true },
+  ];
   const router = new ModelRouter({
-    providers: [
-      { id: "primary", name: "Primary", endpoint: "http://localhost", priority: 1, enabled: true },
-      { id: "fallback", name: "Fallback", endpoint: "http://localhost", priority: 2, enabled: true },
-    ],
+    providers: applyProviderEndpoints(baseProviders, providerEndpoints),
     failoverEnabled: true,
+    allowlist: providerAllowlist,
   });
 
   const traces = new DecisionTraceService(db);
