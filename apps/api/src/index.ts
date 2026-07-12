@@ -5,6 +5,7 @@ import { GovernanceClient } from "@rarecrest/governance-client";
 import { IntelligenceClient } from "@rarecrest/intelligence-client";
 import { enforceTenancy, AuthError, TenancyViolationError, resolveAuth } from "./auth.js";
 import { mapRouteError } from "./errors.js";
+import { assertEntityAccess, EntityAccessError } from "./tenancy.js";
 import {
   createEntitySchema,
   hardRuleCheckSchema,
@@ -38,10 +39,16 @@ import { registerKillSwitchRoutes } from "./routes/kill-switch-routes.js";
 import { registerPhiVaultRoutes } from "./routes/phi-vault-routes.js";
 import { registerAuthRevocationRoutes } from "./routes/auth-revocation-routes.js";
 import { registerWikiRoutes } from "./routes/wiki-routes.js";
+import { registerJobsRoutes } from "./routes/jobs-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
-import { assertPrivateDeploymentOrDie, corsOriginOption } from "./fortress.js";
+import {
+  assertPrivateDeploymentOrDie,
+  corsOriginOption,
+  requireInternalServiceTokenOrDie,
+} from "./fortress.js";
 import { loadSecret } from "./secrets.js";
+import { renderMetricsText } from "./observability.js";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 
@@ -70,7 +77,7 @@ export async function buildApp() {
   await app.register(cors, { origin: corsOriginOption(HOST) });
 
   app.addHook("preHandler", async (request) => {
-    if (request.url === "/health") return;
+    if (request.url === "/health" || request.url === "/metrics") return;
     request.auth = await resolveAuth(request, { db });
   });
 
@@ -86,10 +93,16 @@ export async function buildApp() {
     };
   });
 
+  /** Prometheus-ish text exposition; unauthenticated like /health, no PHI/secrets. */
+  app.get("/metrics", async (_request, reply) => {
+    reply.header("Content-Type", "text/plain; version=0.0.4");
+    return reply.send(renderMetricsText());
+  });
+
   const portfolio = new PortfolioService(db);
 
   registerPhaseRoutes(app, db, governance, intelligence);
-  registerPortfolioRoutes(app, portfolio);
+  registerPortfolioRoutes(app, portfolio, db);
   registerDiagnosticsRoutes(app, db);
   registerMigrationRoutes(app, db);
   registerTaskDecompositionRoutes(app, db);
@@ -115,6 +128,7 @@ export async function buildApp() {
   registerPhiVaultRoutes(app, db);
   registerAuthRevocationRoutes(app, db);
   registerWikiRoutes(app, db);
+  registerJobsRoutes(app, db, intelligence);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {
@@ -153,11 +167,15 @@ export async function buildApp() {
     try {
       const body = validate(hardRuleCheckSchema, request.body);
       enforceTenancy(request.auth, body.vertical);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const verdict = await governance.checkHardRules(body);
       return reply.send(verdict);
     } catch (err) {
       if (err instanceof z.ZodError) {
         return reply.status(400).send(formatZodErrors(err));
+      }
+      if (err instanceof EntityAccessError) {
+        return reply.status(err.statusCode).send({ message: err.message });
       }
       if (err instanceof AuthError || err instanceof TenancyViolationError) {
         return reply.status(403).send({ message: (err as Error).message });
@@ -180,6 +198,7 @@ export async function buildApp() {
 
 async function main() {
   assertPrivateDeploymentOrDie(HOST);
+  requireInternalServiceTokenOrDie(HOST);
   const { app } = await buildApp();
   await app.listen({ port: PORT, host: HOST });
   console.log(`API Server listening on ${HOST}:${PORT} (fortress posture active)`);

@@ -27,14 +27,41 @@ pub fn build_router(kill_switch: Arc<Mutex<KillSwitchController>>) -> Router {
         .with_state(kill_switch)
 }
 
-/// When INTERNAL_SERVICE_TOKEN is set, require matching x-internal-service-token on /rpc/*.
-/// /health stays open. Empty/unset token keeps local demos and unit tests working.
+/// Reads INTERNAL_SERVICE_TOKEN, or INTERNAL_SERVICE_TOKEN_FILE (Docker/K8s secrets pattern).
+fn read_internal_service_token() -> String {
+    if let Ok(path) = std::env::var("INTERNAL_SERVICE_TOKEN_FILE") {
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            let trimmed = contents.trim().to_string();
+            if !trimmed.is_empty() {
+                return trimmed;
+            }
+        }
+    }
+    std::env::var("INTERNAL_SERVICE_TOKEN").unwrap_or_default()
+}
+
+fn is_strict_posture() -> bool {
+    let strict_mode = std::env::var("AUTH_TRUST_MODE")
+        .map(|v| v.eq_ignore_ascii_case("strict"))
+        .unwrap_or(false);
+    let require_flag = std::env::var("REQUIRE_INTERNAL_RPC_AUTH")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    strict_mode || require_flag
+}
+
+/// When INTERNAL_SERVICE_TOKEN (or _FILE) is set, require matching x-internal-service-token
+/// on /rpc/*. /health stays open. When unset: fail-closed (503) under AUTH_TRUST_MODE=strict
+/// or REQUIRE_INTERNAL_RPC_AUTH=1; otherwise allow (local demos / unit tests).
 async fn require_internal_service_token(req: Request, next: Next) -> Result<Response, StatusCode> {
     if req.uri().path() == "/health" {
         return Ok(next.run(req).await);
     }
-    let expected = std::env::var("INTERNAL_SERVICE_TOKEN").unwrap_or_default();
+    let expected = read_internal_service_token();
     if expected.is_empty() {
+        if is_strict_posture() {
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
         return Ok(next.run(req).await);
     }
     let provided = req

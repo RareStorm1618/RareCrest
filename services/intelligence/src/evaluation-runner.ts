@@ -57,6 +57,37 @@ export async function persistEvaluationRun(
       [input.entityId, input.agentId, result.alert, sla],
     );
     humanReviewId = hr.rows[0].id as string;
+    await raiseDriftAttentionFlag(db, input.entityId, input.agentId, result.alert);
   }
   return { ...result, runId, humanReviewId };
+}
+
+/**
+ * Eval drift → attention: raises (or reuses) an open attention flag linking to the
+ * entity's runtime view, deduped by source_ref so repeated drift runs don't spam the queue.
+ */
+async function raiseDriftAttentionFlag(
+  db: DatabaseClient,
+  entityId: string,
+  agentId: string,
+  message: string,
+): Promise<void> {
+  const sourceRef = `evaluation_drift:${agentId}`;
+  const linkPath = `#/entities/${entityId}/runtime`;
+  try {
+    const existing = await db.query(
+      `SELECT id FROM rarecrest.attention_flags
+       WHERE entity_id = $1 AND source_ref = $2 AND resolved_at IS NULL LIMIT 1`,
+      [entityId, sourceRef],
+    );
+    if (existing.rows.length > 0) return;
+    await db.query(
+      `INSERT INTO rarecrest.attention_flags
+         (entity_id, flag_type, signal_type, severity, message, link_path, source_ref)
+       VALUES ($1, 'evaluation_drift', 'evaluation_drift', 'high', $2, $3, $4)`,
+      [entityId, message, linkPath, sourceRef],
+    );
+  } catch {
+    // Best-effort — evaluation persistence must not fail because attention_flags is unavailable.
+  }
 }

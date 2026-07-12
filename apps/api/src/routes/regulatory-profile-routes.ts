@@ -76,6 +76,9 @@ export function registerRegulatoryProfileRoutes(app: FastifyInstance, db: Databa
 
   app.get("/api/v1/entities/:id/regulatory-profile/changes", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const scope = isDirectorScope(request.auth, request) ? undefined : request.auth.vertical;
+    const profile = await service.getProfile(id, scope);
+    if (!profile) return reply.status(404).send({ message: "Entity not found" });
     const changes = await service.listRegimeChanges(id);
     return reply.send({ entityId: id, changes });
   });

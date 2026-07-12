@@ -45,11 +45,26 @@ export function CommandPalette({ open, onClose, rollup, currentRoute }: CommandP
         hint: "Holding roll-up",
         run: () => navigate({ name: "portfolio" }),
       },
+      {
+        id: "command-center",
+        label: "Go to Command Center",
+        hint: "Morning brief, priorities, attention queue",
+        run: () => navigate({ name: "command" }),
+      },
     ];
 
-    const entityId = currentRoute.name === "portfolio" ? null : currentRoute.entityId;
+    const entityId =
+      currentRoute.name === "portfolio" || currentRoute.name === "command" ? null : currentRoute.entityId;
     if (entityId) {
-      for (const section of ["diagnostics", "design", "migration", "companion", "wiki"] as const) {
+      for (const section of [
+        "diagnostics",
+        "design",
+        "migration",
+        "companion",
+        "wiki",
+        "runtime",
+        "legal",
+      ] as const) {
         items.push({
           id: `section-${section}`,
           label: `Open ${section}`,

@@ -137,6 +137,46 @@ export class KillSwitchService {
     };
   }
 
+  /**
+   * Disarm resets the switch to idle. Dual-control in strict mode: the disarm actor
+   * must differ from whoever triggered it (or armed it, if never triggered) — the
+   * same human should not both pull and release the brake unwitnessed.
+   */
+  async disarm(input: { entityId: string; actorId: string; reason: string }): Promise<KillSwitchRow> {
+    const existing = await this.get(input.entityId);
+    if (existing.state === "idle") {
+      return existing;
+    }
+
+    const conflictingActor = existing.state === "triggered" ? existing.triggeredBy : existing.armedBy;
+    const dualControlOk = !conflictingActor || conflictingActor !== input.actorId;
+    if (!dualControlOk && trustMode() === "strict") {
+      throw new KillSwitchError(
+        "Dual-control required: disarm actor must differ from the actor who armed/triggered",
+        403,
+      );
+    }
+
+    await this.db.query(
+      `UPDATE rarecrest.kill_switches
+       SET state = 'idle', armed_by = NULL, armed_at = NULL, armed_reason = NULL,
+           triggered_by = NULL, triggered_at = NULL, triggered_reason = NULL, updated_at = NOW()
+       WHERE entity_id = $1`,
+      [input.entityId],
+    );
+    await this.appendEvent(input.entityId, "disarm", input.actorId, input.reason, "idle", dualControlOk);
+    try {
+      await this.governance?.disarmKillSwitch({
+        entityId: input.entityId,
+        actorId: input.actorId,
+        reason: input.reason,
+      });
+    } catch {
+      // Durable store is source of truth; governance cache sync is best-effort.
+    }
+    return this.get(input.entityId);
+  }
+
   private async appendEvent(
     entityId: string,
     action: "arm" | "trigger" | "disarm",

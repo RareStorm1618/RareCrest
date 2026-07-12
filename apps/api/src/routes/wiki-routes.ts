@@ -171,6 +171,7 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       const principal = classifyWikiPrincipal(request.auth);
       const result = await wiki.query(body.namespace, body.question, body.fileAnswer, request.auth.userId, {
         redactSensitive: principal === "agent",
+        includeDrafts: principal !== "agent",
       });
       return reply.send(result);
     } catch (err) {

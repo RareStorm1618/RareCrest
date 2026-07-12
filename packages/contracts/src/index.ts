@@ -83,6 +83,10 @@ export interface DecisionTraceEntry {
   payload: Record<string, unknown>;
   createdAt: string;
   retentionRegime: string;
+  /** Wave 3 hash chain: sha256(entityId+action+payload); null for the first trace on an entity. */
+  prevHash?: string | null;
+  /** Wave 3 hash chain: sha256 of this trace's own content, chained to prevHash. */
+  contentHash?: string;
 }
 
 export interface EntityState {

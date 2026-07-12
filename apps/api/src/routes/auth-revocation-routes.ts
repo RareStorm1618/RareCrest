@@ -19,7 +19,7 @@ export function registerAuthRevocationRoutes(app: FastifyInstance, db: DatabaseC
       expiresAt: z.string().datetime().optional(),
     });
     try {
-      if (!canRevoke(request.auth.role) && request.auth.userId !== "director-1") {
+      if (!canRevoke(request.auth.role)) {
         return reply.status(403).send({ message: "Only director/compliance_officer may revoke sessions" });
       }
       const body = schema.parse(request.body);

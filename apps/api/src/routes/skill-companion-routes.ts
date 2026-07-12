@@ -18,29 +18,83 @@ const companionBodySchema = z.object({
   fileAnswerToWiki: z.boolean().optional(),
 });
 
-async function buildEntityContext(
+export async function buildEntityContext(
   db: DatabaseClient,
   entityId: string,
   vertical: string,
   entityVertical: string,
 ) {
-  const assessment = await db.query(
-    `SELECT readiness_band, maturity_level, status FROM rarecrest.readiness_assessments
-     WHERE entity_id = $1 ORDER BY updated_at DESC LIMIT 1`,
-    [entityId],
-  );
+  const [entityRow, assessment] = await Promise.all([
+    db.query<{ entity_type: string | null; regulatory_regimes: string[] | null }>(
+      `SELECT entity_type, regulatory_regimes FROM rarecrest.entities WHERE id = $1`,
+      [entityId],
+    ),
+    db.query<{ readiness_band: string; maturity_level: number; status: string }>(
+      `SELECT readiness_band, maturity_level, status FROM rarecrest.readiness_assessments
+       WHERE entity_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+      [entityId],
+    ),
+  ]);
+  const e = entityRow.rows[0];
   const a = assessment.rows[0];
   return {
     entityId,
-    entityType: null,
+    entityType: e?.entity_type ?? null,
     vertical: entityVertical || vertical,
-    regulatoryRegimes: [] as string[],
-    readinessBand: (a?.readiness_band as string) ?? null,
-    maturityLevel: (a?.maturity_level as number) ?? null,
+    regulatoryRegimes: Array.isArray(e?.regulatory_regimes) ? e.regulatory_regimes : [],
+    readinessBand: a?.readiness_band ?? null,
+    maturityLevel: a?.maturity_level ?? null,
     migrationMode: null as string | null,
     diagnosticsComplete: a?.status === "complete",
   };
 }
+
+/**
+ * Fail-open by design: this is a defense-in-depth net on top of the intelligence
+ * service's own framing guard, not the primary control. Patterns are intentionally
+ * simple/conservative (guaranteed, risk-free, 100% claims) — false positives are
+ * cheaper than a shipped compliance violation.
+ */
+const PROHIBITED_CLAIM_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
+  { label: "guaranteed", pattern: /\bguarantee(d|s)?\b/i },
+  { label: "risk_free", pattern: /\brisk[-\s]?free\b/i },
+  { label: "no_risk", pattern: /\bno\s+risk\b/i },
+  { label: "cannot_lose", pattern: /\bcan(?:not|'t)\s+(?:lose|fail)\b/i },
+  { label: "100_percent_claim", pattern: /\b100\s*%\s*(safe|secure|effective|accurate|success(?:ful)?)\b/i },
+  { label: "assured_returns", pattern: /\bassured\s+returns?\b/i },
+];
+
+export function scanProhibitedClaims(text: string): string[] {
+  const hits: string[] = [];
+  for (const { label, pattern } of PROHIBITED_CLAIM_PATTERNS) {
+    if (pattern.test(text)) hits.push(label);
+  }
+  return hits;
+}
+
+interface ProhibitedClaimsCapableClient {
+  checkProhibitedClaims?: (input: { text: string }) => Promise<{ violations?: string[] }>;
+}
+
+/** Prefer the intelligence service's own checker when it exists; otherwise fall
+ * back to the local regex scan above. Never skip the check silently. */
+async function detectProhibitedClaims(
+  intelligence: IntelligenceClient,
+  text: string,
+): Promise<string[]> {
+  const client = intelligence as unknown as ProhibitedClaimsCapableClient;
+  if (typeof client.checkProhibitedClaims === "function") {
+    try {
+      const verdict = await client.checkProhibitedClaims({ text });
+      return verdict.violations ?? [];
+    } catch {
+      // Intelligence RPC unavailable — fall through to local scan rather than skip.
+    }
+  }
+  return scanProhibitedClaims(text);
+}
+
+const DRAFT_WATERMARK = "> DRAFT — not canon. Human promote required.\n\n";
 
 async function wikiContextForEntity(
   db: DatabaseClient,
@@ -107,6 +161,18 @@ export function registerSkillCompanionRoutes(
           guard,
         });
       }
+
+      let prohibitedClaims: string[] = [];
+      if (typeof result.answer === "string") {
+        prohibitedClaims = await detectProhibitedClaims(intelligence, result.answer);
+        if (prohibitedClaims.length > 0) {
+          return reply.status(403).send({
+            message: "Response blocked — prohibited claims detected",
+            prohibitedClaims,
+          });
+        }
+      }
+
       if (body.fileAnswerToWiki && typeof result.answer === "string") {
         const wiki = new WikiService(db);
         await wiki.ingest({
@@ -114,7 +180,7 @@ export function registerSkillCompanionRoutes(
           vertical: entity.vertical as VerticalKey,
           entityId: body.entityId,
           title: `Companion: ${body.question.slice(0, 80)}`,
-          body: result.answer,
+          body: `${DRAFT_WATERMARK}${result.answer}`,
           sourceKind: "structured_doc",
           actorId: request.auth.userId,
         });

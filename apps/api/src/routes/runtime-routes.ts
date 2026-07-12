@@ -21,6 +21,7 @@ import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { deriveActivationControls, appendDenyTrace } from "../trust.js";
+import { assertLivePassport, requireHumanInstruction, PolicyGatewayError } from "../policy/index.js";
 
 const activationControlsSchema = z.object({
   hardRuleClear: z.boolean(),
@@ -68,6 +69,28 @@ export function registerRuntimeRoutes(
       await assertEntityAccess(db, body.entityId, request.auth);
 
       if (body.status === "running") {
+        // Fail-closed: a live (hard-rule-clear, unexpired) agent passport is a
+        // precondition for activation, independent of the activation-controls verdict.
+        try {
+          await assertLivePassport(db, { entityId: body.entityId, agentId: body.agentId });
+        } catch (passportErr) {
+          if (passportErr instanceof PolicyGatewayError) {
+            await appendDenyTrace(intelligence, {
+              vertical: request.auth.vertical,
+              entityId: body.entityId,
+              action: "runtime_agent_activation",
+              reason: passportErr.code,
+              route: "/api/v1/runtime/agents",
+              statusCode: passportErr.statusCode,
+            });
+            return reply.status(passportErr.statusCode).send({
+              message: passportErr.message,
+              code: passportErr.code,
+            });
+          }
+          throw passportErr;
+        }
+
         const controls = await deriveActivationControls(db, body.entityId, body.agentId);
         const verdict = await governance.evaluateActivation({
           agentId: body.agentId,
@@ -162,7 +185,39 @@ export function registerRuntimeRoutes(
         return reply.send({ agentId: body.agentId, status: "halted_instead", message: "No prior known-good state — agent halted" });
       }
 
-      // Fail-closed: rolling back to "running" requires the same server-derived activation controls.
+      // Fail-closed: rolling back to "running" requires a live passport plus the same
+      // server-derived activation controls as fresh activation.
+      try {
+        await assertLivePassport(db, { entityId: body.entityId, agentId: body.agentId });
+      } catch (passportErr) {
+        if (passportErr instanceof PolicyGatewayError) {
+          await db.query(
+            `UPDATE rarecrest.agent_roster SET status = 'halted', updated_at = NOW() WHERE agent_id = $1 AND entity_id = $2`,
+            [body.agentId, body.entityId],
+          );
+          await db.query(
+            `INSERT INTO rarecrest.agent_rollbacks (agent_id, entity_id, from_version, to_version, reason, status)
+             VALUES ($1, $2, $3, $4, $5, 'halted_instead')`,
+            [body.agentId, body.entityId, agent.rows[0].version, targetVersion, body.reason],
+          );
+          await appendDenyTrace(intelligence, {
+            vertical: request.auth.vertical,
+            entityId: body.entityId,
+            action: "agent_rollback",
+            reason: passportErr.code,
+            route: "/api/v1/runtime/rollback",
+            statusCode: passportErr.statusCode,
+          });
+          return reply.status(passportErr.statusCode).send({
+            agentId: body.agentId,
+            status: "halted_instead",
+            message: passportErr.message,
+            code: passportErr.code,
+          });
+        }
+        throw passportErr;
+      }
+
       const controls = await deriveActivationControls(db, body.entityId, body.agentId);
       const activation = await governance.evaluateActivation({
         agentId: body.agentId,
@@ -305,6 +360,28 @@ export function registerRuntimeRoutes(
               reviewId: id,
             });
           }
+
+          try {
+            await requireHumanInstruction(db, humanInstructionId, pendingRow.entityId as string);
+          } catch (instructionErr) {
+            if (instructionErr instanceof PolicyGatewayError) {
+              await appendDenyTrace(intelligence, {
+                vertical: request.auth.vertical,
+                entityId: pendingRow.entityId as string,
+                action: "held_action_release",
+                reason: instructionErr.code,
+                route: "/api/v1/runtime/human-review/:id/resolve",
+                statusCode: instructionErr.statusCode,
+              });
+              return reply.status(instructionErr.statusCode).send({
+                message: instructionErr.message,
+                code: instructionErr.code,
+                reviewId: id,
+              });
+            }
+            throw instructionErr;
+          }
+
           const verdict = await governance.checkHardRules({
             agentId: String(pendingRow.agentId ?? "unknown"),
             entityId: pendingRow.entityId as string,

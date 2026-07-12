@@ -37,7 +37,7 @@ describe("deriveActivationControls (fail-closed)", () => {
     const controls = await deriveActivationControls(
       mockDb({
         envelope: [{ id: "aud-1", hard_rule_clear: true, deployable: true }],
-        evaluation: [{ id: "eval-1" }],
+        evaluation: [{ id: "eval-1", created_at: new Date().toISOString(), drift_detected: false }],
       }),
       "e1",
       "a1",
@@ -48,11 +48,24 @@ describe("deriveActivationControls (fail-closed)", () => {
     expect(controls.source.latestEnvelopeAuditId).toBe("aud-1");
   });
 
+  it("denies evaluationSuiteRegistered when the latest run is stale (>30 days)", async () => {
+    const stale = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const controls = await deriveActivationControls(
+      mockDb({
+        envelope: [{ id: "aud-1", hard_rule_clear: true, deployable: true }],
+        evaluation: [{ id: "eval-1", created_at: stale, drift_detected: false }],
+      }),
+      "e1",
+      "a1",
+    );
+    expect(controls.evaluationSuiteRegistered).toBe(false);
+  });
+
   it("clears hardRuleClear when durable kill switch is armed", async () => {
     const controls = await deriveActivationControls(
       mockDb({
         envelope: [{ id: "aud-1", hard_rule_clear: true, deployable: true }],
-        evaluation: [{ id: "eval-1" }],
+        evaluation: [{ id: "eval-1", created_at: new Date().toISOString(), drift_detected: false }],
         kill: [{ state: "armed" }],
       }),
       "e1",
@@ -61,6 +74,35 @@ describe("deriveActivationControls (fail-closed)", () => {
     expect(controls.hardRuleClear).toBe(false);
     expect(controls.source.killSwitchArmed).toBe(true);
     expect(controls.source.killSwitchState).toBe("armed");
+  });
+
+  it("blocks activation when open human reviews exist for the entity", async () => {
+    const controls = await deriveActivationControls(
+      mockDb({
+        envelope: [{ id: "aud-1", hard_rule_clear: true, deployable: true }],
+        evaluation: [{ id: "eval-1", created_at: new Date().toISOString(), drift_detected: false }],
+        reviews: [{ count: "2" }],
+      }),
+      "e1",
+      "a1",
+    );
+    expect(controls.hardRuleClear).toBe(false);
+    expect(controls.source.openHumanReviews).toBe(2);
+    expect(controls.source.activationBlockedByOpenReviews).toBe(true);
+  });
+
+  it("fails closed on killSwitchesLive/humanReviewRoutingLive when the durable tables are unqueryable", async () => {
+    const db = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("kill_switches") || sql.includes("human_review_queue")) {
+          throw new Error("relation does not exist");
+        }
+        return { rows: [] };
+      }),
+    } as unknown as DatabaseClient;
+    const controls = await deriveActivationControls(db, "e1", "a1");
+    expect(controls.killSwitchesLive).toBe(false);
+    expect(controls.humanReviewRoutingLive).toBe(false);
   });
 });
 

@@ -2,6 +2,8 @@
 
 This document is the honest map of what RareCrest **does** enforce today and what must remain **human-owned forever** for a mission that serves the sick and suffering.
 
+See [`VPS-CUTOVER.md`](./VPS-CUTOVER.md) for the concrete private-VPS deployment walkthrough (reverse proxy, sidecar binds, OIDC claims, secrets, backup/restore, offboarding).
+
 ## What is fail-closed today
 
 | Control | Behavior |
@@ -15,12 +17,18 @@ This document is the honest map of what RareCrest **does** enforce today and wha
 | PHI encryption evidence | Derived from `entity_encryption_layers` (never client boolean). |
 | PHI vault + KMS wrap | Random DEK per envelope; DEK wrapped under `PHI_KMS_KEK` or remote `PHI_KMS_ENDPOINT`. Agents get blind refs only. |
 | Secrets loading | `FOO` or `FOO_FILE` (Docker/K8s secrets pattern) via `loadSecret`. |
-| Financial dual-control | Money/trade releases need `humanInstructionId`, hard-rule clear, **and** two distinct human approvers. |
-| Kill switch | Durable Postgres + dual-control trigger in strict mode. |
-| Internal RPC | `INTERNAL_SERVICE_TOKEN` on governance/intelligence `/rpc/*`. |
+| Financial dual-control | Money/trade releases need `humanInstructionId`, hard-rule clear, **and** two distinct human approvers. `humanInstructionId` is now verified server-side against `rarecrest.human_instructions` (must exist, match the entity, and be unexpired/unrevoked) — a client-supplied id string alone is never trusted. |
+| Kill switch | Durable Postgres + dual-control trigger in strict mode. Arm/trigger/disarm are all **director-only** (`isVerifiedDirector`, 403 otherwise); read stays entity-scoped. Disarm requires the disarm actor to differ from whoever armed/triggered it in strict mode. |
+| Action policy gateway | `apps/api/src/policy/policy-gateway.ts`: `assertLivePassport` re-checks `hard_rule_clear` **and** `valid_until > now()` on every runtime activation/rollback (not just at issuance); `requireHumanInstruction` is the single fail-closed check behind every financial/human-instruction-gated release; `attachCorrelationId` gives every gated request a stable trace id. |
+| Runtime activation realism | `deriveActivationControls` now fails closed when the kill-switch or human-review tables are unqueryable (broken table ≠ "live"), treats `evaluation_runs` as stale after 30 days, and blocks activation outright (`hardRuleClear=false`, `activationBlockedByOpenReviews=true`) while any human review is pending for the entity. |
+| Internal RPC | `INTERNAL_SERVICE_TOKEN` (or `_FILE`) on API/governance-engine/intelligence/scoring `/rpc/*`. Fail-closed (503) when unset under `AUTH_TRUST_MODE=strict` or non-loopback bind. |
 | Command queue | Vertical-scoped unless verified director. |
 | Federated Canon Wiki | Fail-closed Knowledge OS: entity IDOR closed, agent verb bounds, PHI reject on care ingest, autoresearch OFF by default, encrypted Obsidian vault packages only. |
 | Private deployment gate | Non-loopback `API_HOST` requires `AUTH_TRUST_MODE=strict` + `CORS_ALLOWED_ORIGINS`. |
+| RBAC action matrix | `apps/api/src/rbac.ts` — `roleAllows(role, action)` for `kill_switch`, `phi_decrypt`, `vault_package`, `promote`, `export`. Unknown/missing role is always denied (fail-closed). Kill-switch routes gate on `roleAllows(..., 'kill_switch') \|\| isVerifiedDirector`; PHI decrypt gates on `roleAllows(..., 'phi_decrypt')`. |
+| Rate limits | Postgres-backed via `rarecrest.api_rate_limits` (`assertDbRateLimit`/`WikiService.assertRateLimitDb`, used by wiki query + autoresearch); falls back to an in-memory bucket when the table/migration is unavailable — fails open on infra gaps, never silently unlimited. |
+| Decision-trace hash chain | Every `decision_traces` row carries `content_hash = sha256(entityId+action+payload)` and `prev_hash` from the entity's prior trace — tamper-evident in addition to the existing append-only DB trigger. |
+| Observability | `GET /metrics` (unauthenticated, like `/health`, no PHI/secrets) exposes Prometheus-ish counters: RPC-unauthorized, PHI-decrypt allow/deny, kill-switch arm/trigger/disarm, auth failures, RBAC denials. |
 
 ## Federated Canon Wiki
 
@@ -37,6 +45,7 @@ This document is the honest map of what RareCrest **does** enforce today and wha
 | Decision-trace → wiki | Pull ingest with redacted payload allowlist; governance gateway best-effort ingest. |
 | Obsidian | Encrypted signed vault packages (`POST /obsidian/vault-package`); plaintext body sync disabled. Metadata-only manifest remains. |
 | Autoresearch | **OFF** unless `WIKI_AUTORESEARCH_ENABLED=true` + director + explicit `WEB_SEARCH_PROVIDER`. No silent DuckDuckGo. |
+| Skill companion drafts | `POST /api/v1/skill-companion` scans answers for prohibited claims (guaranteed / risk-free / 100% claims) before returning them, and watermarks any answer filed to the wiki with `> DRAFT — not canon. Human promote required.` — filed drafts are never canon and always route through the same human/director promote ceremony above. |
 
 ## What must remain human-owned forever
 
@@ -61,7 +70,12 @@ This document is the honest map of what RareCrest **does** enforce today and wha
 | `WIKI_VAULT_PACKAGE_HMAC` / `_FILE` | Sign vault packages. |
 | `OIDC_ISSUER` / `OIDC_AUDIENCE` / `OIDC_JWKS_URL` | Production IdP verification. |
 | `JWT_SECRET` | Local HS256 verification. |
-| `INTERNAL_SERVICE_TOKEN` | Internal RPC auth. |
+| `INTERNAL_SERVICE_TOKEN` / `_FILE` | Internal RPC auth (mandatory in strict/non-loopback; fail-closed 503 if unset). |
+| `REQUIRE_INTERNAL_RPC_AUTH` | `1`/`true` forces fail-closed internal RPC auth even outside `AUTH_TRUST_MODE=strict` (governance-engine, scoring). |
+| `SCORING_HOST` | Scoring sidecar bind address; defaults to `127.0.0.1` (loopback-only). |
+| `GOVERNANCE_HOST` | Governance-engine sidecar bind address; defaults to `127.0.0.1` (loopback-only). |
+| `INTELLIGENCE_HOST` | Intelligence-services sidecar bind address; defaults to `127.0.0.1` (loopback-only). |
+| `INTEL_TOKEN_BUDGET_<VERTICAL>` | Daily skill-companion token budget for `<VERTICAL>` (e.g. `INTEL_TOKEN_BUDGET_RAREANGELS`); defaults to 100,000/day. Exceeding it returns 429 from `/rpc/skill-companion/complete`. |
 | `PHI_KMS_KEK` or `PHI_KMS_KEK_FILE` | Preferred local KEK for DEK wrapping. |
 | `PHI_KMS_ENDPOINT` + `PHI_KMS_TOKEN` | Remote KMS broker (`/wrap`, `/unwrap`). |
 | `PHI_MASTER_KEY` | Legacy fallback KEK material in **dev only**; insufficient alone in strict. |
@@ -72,16 +86,24 @@ This document is the honest map of what RareCrest **does** enforce today and wha
 - [ ] `AUTH_TRUST_MODE=strict`
 - [ ] `CORS_ALLOWED_ORIGINS` set for LAN/VPN/VPS web origin(s)
 - [ ] Real IdP JWKS configured; tokens include `sub`, `vertical`, `role`, `jti`
-- [ ] `INTERNAL_SERVICE_TOKEN` from secrets manager on API + governance + intelligence
+- [ ] `INTERNAL_SERVICE_TOKEN` (or `_FILE`) is **mandatory** and non-empty on API + governance-engine + intelligence + scoring — all four fail closed (503) without it under `AUTH_TRUST_MODE=strict`
 - [ ] `PHI_KMS_KEK` or cloud KMS endpoint from secrets manager (`*_FILE` supported)
 - [ ] `WIKI_VAULT_PACKAGE_KEK` + `WIKI_VAULT_PACKAGE_HMAC` from secrets manager
 - [ ] `WIKI_AUTORESEARCH_ENABLED=false` unless explicitly approved
-- [ ] `pnpm db:migrate` through `020_wiki_vault_packages.sql`
+- [ ] `WIKI_AGENT_BOUNDS=strict` on every non-loopback deployment (default off only for loopback dev)
+- [ ] `pnpm db:migrate` through `023_apex_jobs_rate_limits.sql`
+- [ ] Confirm kill-switch arm/trigger/disarm all reject actors without `roleAllows(role, 'kill_switch')` or verified-director scope (403), and that disarm enforces dual-control against whoever armed/triggered
 - [ ] Register encryption layer per care entity
 - [ ] Dual-control kill-switch drill (two distinct humans)
 - [ ] Dual-control financial commit drill (two distinct approvers)
 - [ ] Offboarding path: `POST /api/v1/auth/revoke` with subject (and optional jti)
 - [ ] Confirm agent roles cannot decrypt PHI or download vault packages
+- [ ] Governance-engine, intelligence, and scoring sidecars bind to `127.0.0.1` (loopback) by default — only widen `GOVERNANCE_HOST`/`INTELLIGENCE_HOST`/`SCORING_HOST` behind a private network with `INTERNAL_SERVICE_TOKEN` set
+- [ ] Terminate TLS at a reverse proxy (nginx/Caddy/cloud LB) in front of any non-loopback bind; RareCrest services do not terminate TLS themselves (see `infra/proxy/Caddyfile.example`)
+- [ ] Kill switches disarmed and audited before go-live; confirm no `armed`/`triggered` state lingers from staging
+- [ ] Confirm the `director-1` userId bypass is fully removed — `isVerifiedDirector` and `classifyWikiPrincipal` require an explicit `role=director` claim (verified via `grep -R "director-1" apps/api/src services/*/src packages/*/src` returning no privilege-check matches)
+- [ ] Review `GET /metrics` after a smoke test — `rarecrest_auth_failures_total`, `rarecrest_rbac_denials_total`, and `rarecrest_phi_decrypt_total{outcome="denied"}` should all be 0 in a clean environment
+- [ ] Full VPS cutover walkthrough: [`docs/VPS-CUTOVER.md`](./VPS-CUTOVER.md)
 
 ## Engineering posture
 

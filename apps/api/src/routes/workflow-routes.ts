@@ -12,6 +12,7 @@ import {
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
+import { buildEntityContext } from "./skill-companion-routes.js";
 
 export function registerWorkflowRoutes(app: FastifyInstance, db: DatabaseClient, intelligence: IntelligenceClient) {
   app.get("/api/v1/workflows", async (_request, reply) => {
@@ -29,7 +30,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, db: DatabaseClient,
     });
     try {
       const body = schema.parse(request.body);
-      await assertEntityAccess(db, body.entityId, request.auth);
+      const entity = await assertEntityAccess(db, body.entityId, request.auth);
       const workflow = getWorkflow(body.workflowId);
       const existing = await db.query(
         `SELECT id, completed_steps FROM rarecrest.workflow_runs
@@ -51,11 +52,14 @@ export function registerWorkflowRoutes(app: FastifyInstance, db: DatabaseClient,
         complete: Object.keys(body.stepOutput).length > 0,
       };
       const validation = validateWorkflowArtifact(artifact);
+      const entityContext = await buildEntityContext(db, body.entityId, request.auth.vertical, entity.vertical);
       await intelligence.skillCompanionComplete({
         entityId: body.entityId,
         vertical: request.auth.vertical,
         question: workflow.steps.find((s) => s.id === body.stepId)?.prompt ?? "workflow step",
         context: [JSON.stringify(artifact)],
+        requestKind: "substantive",
+        entityContext,
       });
       const nextCompleted = completedSteps.includes(body.stepId) ? completedSteps : [...completedSteps, body.stepId];
       const allDone = workflow.steps.every((s) => nextCompleted.includes(s.id));

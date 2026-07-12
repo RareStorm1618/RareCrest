@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { readFileSync } from "node:fs";
 import { DatabaseClient } from "@rarecrest/db";
 import { ModelRouter } from "./model-router.js";
 import { DecisionTraceService } from "./decision-trace.js";
@@ -8,8 +9,32 @@ import type { VerticalKey } from "@rarecrest/contracts";
 import { draftLegalSupportResponse } from "./legal-support-teammate.js";
 import { scanProhibitedClaims } from "./prohibited-claims.js";
 import { AutoCaptureService } from "./auto-capture.js";
+import { BudgetExceededError, checkAndConsumeBudget, estimateTokens } from "./budgets.js";
 
 const PORT = Number(process.env.INTELLIGENCE_PORT ?? 3002);
+
+/** Load a secret from env, or from a file path referenced by *_FILE (Docker/K8s secrets pattern). */
+function loadSecret(envName: string): string | undefined {
+  const fileVar = `${envName}_FILE`;
+  const filePath = process.env[fileVar];
+  if (filePath) {
+    try {
+      const value = readFileSync(filePath, "utf8").trim();
+      if (value.length > 0) return value;
+    } catch {
+      // fall through to direct env var
+    }
+  }
+  const direct = process.env[envName];
+  return direct && direct.length > 0 ? direct : undefined;
+}
+
+function isStrictPosture(): boolean {
+  const strict = (process.env.AUTH_TRUST_MODE ?? "").toLowerCase() === "strict";
+  const requireFlag = process.env.REQUIRE_INTERNAL_RPC_AUTH === "1" ||
+    (process.env.REQUIRE_INTERNAL_RPC_AUTH ?? "").toLowerCase() === "true";
+  return strict || requireFlag;
+}
 
 export async function buildIntelligenceApp() {
   const app = Fastify({ logger: true });
@@ -31,8 +56,15 @@ export async function buildIntelligenceApp() {
 
   app.addHook("preHandler", async (request, reply) => {
     if (request.url === "/health" || request.url.startsWith("/health?")) return;
-    const expected = process.env.INTERNAL_SERVICE_TOKEN;
-    if (!expected) return;
+    const expected = loadSecret("INTERNAL_SERVICE_TOKEN");
+    if (!expected) {
+      if (isStrictPosture()) {
+        return reply.status(503).send({
+          message: "Internal RPC refused: INTERNAL_SERVICE_TOKEN (or _FILE) required under strict trust mode",
+        });
+      }
+      return;
+    }
     const provided = request.headers["x-internal-service-token"];
     if (provided !== expected) {
       return reply.status(401).send({ message: "Unauthorized internal RPC" });
@@ -51,11 +83,15 @@ export async function buildIntelligenceApp() {
       vertical: VerticalKey;
       dimensions: Array<{ name: string; value: number; weight: number }>;
     };
-  }>("/rpc/score", async (request, reply) => {
+  }  >("/rpc/score", async (request, reply) => {
     const scoringUrl = process.env.SCORING_URL ?? "http://localhost:3003";
+    const internalServiceToken = loadSecret("INTERNAL_SERVICE_TOKEN");
     const response = await fetch(`${scoringUrl}/rpc/score`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(internalServiceToken ? { "x-internal-service-token": internalServiceToken } : {}),
+      },
       body: JSON.stringify(request.body),
     });
     if (!response.ok) return reply.status(502).send({ message: "Scoring service unavailable" });
@@ -87,6 +123,17 @@ export async function buildIntelligenceApp() {
   app.post<{ Body: { entityId: string; vertical: string; question: string; context?: string[]; requestKind?: string; entityContext?: object | null } }>(
     "/rpc/skill-companion/complete",
     async (request, reply) => {
+      try {
+        checkAndConsumeBudget(
+          request.body.vertical,
+          estimateTokens(JSON.stringify(request.body)),
+        );
+      } catch (err) {
+        if (err instanceof BudgetExceededError) {
+          return reply.status(err.statusCode).send({ message: err.message });
+        }
+        throw err;
+      }
       const result = await companion.complete(request.body as never);
       return reply.send(result);
     },
@@ -200,10 +247,14 @@ export async function buildIntelligenceApp() {
   return { app, db };
 }
 
+// Fail-closed private bind: default to loopback-only, matching the scoring/API fortress
+// posture. Set INTELLIGENCE_HOST to bind elsewhere (e.g. behind a private network/VPN).
+const HOST = process.env.INTELLIGENCE_HOST ?? "127.0.0.1";
+
 async function main() {
   const { app } = await buildIntelligenceApp();
-  await app.listen({ port: PORT, host: "0.0.0.0" });
-  console.log(`Intelligence Services listening on 0.0.0.0:${PORT}`);
+  await app.listen({ port: PORT, host: HOST });
+  console.log(`Intelligence Services listening on ${HOST}:${PORT}`);
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {

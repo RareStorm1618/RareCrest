@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
 import type { IntelligenceClient } from "@rarecrest/intelligence-client";
+import type { VerticalKey } from "@rarecrest/contracts";
 import {
   assembleAssessmentSummary,
   assembleOversightPack,
@@ -34,6 +35,63 @@ async function storePack(
   return { packId: ins.rows[0].id as string, storedKey: stored.key, rendered };
 }
 
+/**
+ * Core oversight-pack build+store+trace, shared by the synchronous export route and the
+ * async jobs runner (POST /api/v1/jobs, jobType=export_oversight).
+ */
+export async function buildOversightPackForEntity(
+  db: DatabaseClient,
+  intelligence: IntelligenceClient,
+  entityId: string,
+  entityName: string,
+  vertical: VerticalKey,
+  format: "pdf" | "markdown",
+  objectStore: ReturnType<typeof createObjectStoreFromEnv> = createObjectStoreFromEnv(),
+): Promise<{ packId: string; format: "pdf" | "markdown"; downloadUrl: string; generatedAt: string; contentHash: string }> {
+  const flags = await db.query(
+    `SELECT flag_type, message FROM rarecrest.attention_flags WHERE entity_id = $1 AND resolved_at IS NULL`,
+    [entityId],
+  );
+  const assessment = await db.query(
+    `SELECT responses, migration_halted FROM rarecrest.readiness_assessments
+     WHERE entity_id = $1 AND status = 'complete' ORDER BY completed_at DESC LIMIT 1`,
+    [entityId],
+  );
+  const row = assessment.rows[0];
+  const responses = (row?.responses as Record<string, unknown>) ?? {};
+  const pack = assembleOversightPack(
+    {
+      entityId,
+      entityName,
+      governancePillars: (responses.governancePillars as Record<string, number>) ?? {},
+      killSwitchLastTest: (responses.killSwitchTest as string) ?? null,
+      openRedGates: row?.migration_halted ? ["migration_halted"] : [],
+      hardRuleExceptions: flags.rows.filter((f) => f.flag_type === "hard_rule_exception").map((f) => f.message as string),
+      attentionFlags: flags.rows.map((f) => ({ type: f.flag_type as string, message: f.message as string })),
+    },
+    format,
+  );
+
+  const markdown = renderMarkdown(pack);
+  const stored = await storePack(db, objectStore, entityId, "entity", pack, markdown);
+
+  await intelligence.appendTrace({
+    entityId,
+    vertical,
+    action: "export_oversight_pack",
+    verdict: "allow",
+    payload: { format, contentHash: pack.contentHash },
+  });
+
+  return {
+    packId: stored.packId,
+    format,
+    downloadUrl: await objectStore.getObjectUrl(stored.storedKey),
+    generatedAt: pack.generatedAt,
+    contentHash: pack.contentHash,
+  };
+}
+
 export function registerExportRoutes(app: FastifyInstance, db: DatabaseClient, intelligence: IntelligenceClient) {
   const objectStore = createObjectStoreFromEnv();
 
@@ -45,46 +103,16 @@ export function registerExportRoutes(app: FastifyInstance, db: DatabaseClient, i
     try {
       const body = schema.parse(request.body);
       const entity = await assertEntityAccess(db, body.entityId, request.auth);
-
-      const flags = await db.query(
-        `SELECT flag_type, message FROM rarecrest.attention_flags WHERE entity_id = $1 AND resolved_at IS NULL`,
-        [body.entityId],
+      const result = await buildOversightPackForEntity(
+        db,
+        intelligence,
+        body.entityId,
+        entity.name,
+        request.auth.vertical,
+        body.format,
+        objectStore,
       );
-      const assessment = await db.query(
-        `SELECT responses, migration_halted FROM rarecrest.readiness_assessments
-         WHERE entity_id = $1 AND status = 'complete' ORDER BY completed_at DESC LIMIT 1`,
-        [body.entityId],
-      );
-      const row = assessment.rows[0];
-      const responses = (row?.responses as Record<string, unknown>) ?? {};
-      const pack = assembleOversightPack({
-        entityId: body.entityId,
-        entityName: entity.name,
-        governancePillars: (responses.governancePillars as Record<string, number>) ?? {},
-        killSwitchLastTest: (responses.killSwitchTest as string) ?? null,
-        openRedGates: row?.migration_halted ? ["migration_halted"] : [],
-        hardRuleExceptions: flags.rows.filter((f) => f.flag_type === "hard_rule_exception").map((f) => f.message as string),
-        attentionFlags: flags.rows.map((f) => ({ type: f.flag_type as string, message: f.message as string })),
-      }, body.format);
-
-      const markdown = renderMarkdown(pack);
-      const stored = await storePack(db, objectStore, body.entityId, "entity", pack, markdown);
-
-      await intelligence.appendTrace({
-        entityId: body.entityId,
-        vertical: request.auth.vertical,
-        action: "export_oversight_pack",
-        verdict: "allow",
-        payload: { format: body.format, contentHash: pack.contentHash },
-      });
-
-      return reply.send({
-        packId: stored.packId,
-        format: body.format,
-        downloadUrl: await objectStore.getObjectUrl(stored.storedKey),
-        generatedAt: pack.generatedAt,
-        contentHash: pack.contentHash,
-      });
+      return reply.send(result);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
       if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });

@@ -12,6 +12,8 @@ import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { trustMode } from "../auth.js";
 import { loadSecret } from "../secrets.js";
+import { roleAllows } from "../rbac.js";
+import { recordPhiDecrypt } from "../observability.js";
 
 export class PhiVaultError extends Error {
   constructor(
@@ -23,8 +25,9 @@ export class PhiVaultError extends Error {
   }
 }
 
+/** RBAC matrix's phi_decrypt action: director|clinician|compliance_officer only. */
 function isHumanDecryptRole(role: string | undefined): boolean {
-  return role === "director" || role === "clinician" || role === "compliance_officer";
+  return roleAllows(role, "phi_decrypt");
 }
 
 function kmsOrThrow(): KmsProvider {
@@ -193,6 +196,7 @@ export function registerPhiVaultRoutes(app: FastifyInstance, db: DatabaseClient)
 
       const human = isHumanDecryptRole(request.auth.role);
       if (!human) {
+        recordPhiDecrypt("denied");
         await db.query(
           `INSERT INTO rarecrest.phi_decrypt_audit (envelope_id, actor_id, actor_role, denied, deny_reason)
            VALUES ($1, $2, $3, TRUE, $4)`,
@@ -202,6 +206,7 @@ export function registerPhiVaultRoutes(app: FastifyInstance, db: DatabaseClient)
           message: "PHI decrypt is human-custody only — agents are blind to plaintext",
         });
       }
+      recordPhiDecrypt("allowed");
 
       const kms = kmsOrThrow();
       const plaintext = await openWithKmsAsync({

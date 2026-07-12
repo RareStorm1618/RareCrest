@@ -11,6 +11,18 @@ import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { appendDenyTrace } from "../trust.js";
 import { entityEncryptionLayerPresent } from "./phi-vault-routes.js";
 
+/**
+ * Passport issuance below already runs the full hard-rule evaluator
+ * (governance.checkHardRules) and the local envelope pre-check
+ * (issueAgentPassport → hardRuleClear) before ever inserting a row — a
+ * violating passport is never persisted. That is necessary but not
+ * sufficient for runtime trust: issuance is a point-in-time snapshot, so
+ * downstream activation (see policy/policy-gateway.ts#assertLivePassport,
+ * wired into runtime-routes.ts) re-checks `hard_rule_clear` AND
+ * `valid_until > now()` on every activation/rollback — an expired or
+ * never-clear passport is never "active" no matter how it reads here.
+ */
+
 export function registerAgentStudioRoutes(
   app: FastifyInstance,
   db: DatabaseClient,
@@ -193,8 +205,13 @@ export function registerAgentStudioRoutes(
        LIMIT 1`,
       [entityId, agentId],
     );
-    if (!result.rows[0]) return reply.status(404).send({ message: "Passport not found" });
-    return reply.send(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) return reply.status(404).send({ message: "Passport not found" });
+    // Issuance-time hard_rule_clear does not by itself mean the passport is usable
+    // *now* — expiry must be checked on every read, matching assertLivePassport.
+    const validUntil = new Date(row.validUntil as string);
+    const active = Boolean(row.hardRuleClear) && !Number.isNaN(validUntil.getTime()) && validUntil.getTime() > Date.now();
+    return reply.send({ ...row, active });
   });
 
   app.post("/api/v1/agents/blueprint", async (request, reply) => {

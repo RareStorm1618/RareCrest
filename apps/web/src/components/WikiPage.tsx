@@ -25,6 +25,7 @@ interface QueryCitation {
 }
 
 export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: WikiPageProps) {
+  const isAgentRole = headers["x-user-role"] === "agent";
   const [namespace, setNamespace] = useState(`entity/${entityId}/working`);
   const [pages, setPages] = useState<WikiPageRow[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -322,15 +323,19 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
             <button type="button" disabled={busy} onClick={runDoctor}>
               Doctor
             </button>
-            <button type="button" disabled={busy || !selectedSlug} onClick={runPromote}>
-              Promote
-            </button>
+            {!isAgentRole && (
+              <button type="button" disabled={busy || !selectedSlug} onClick={runPromote}>
+                Promote
+              </button>
+            )}
             <button type="button" disabled={busy} onClick={runIngestTraces}>
               Sync traces
             </button>
-            <button type="button" disabled={busy} onClick={runVaultPackage}>
-              Vault pkg
-            </button>
+            {!isAgentRole && (
+              <button type="button" disabled={busy} onClick={runVaultPackage}>
+                Vault pkg
+              </button>
+            )}
           </div>
           <ul className="wiki-page-list">
             {pages.map((page) => (

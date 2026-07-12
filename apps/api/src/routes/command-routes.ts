@@ -119,9 +119,10 @@ export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) 
     try {
       const body = schema.parse(request.body);
       const result = await db.query(
-        `INSERT INTO rarecrest.shared_memory_records (title, content, tags) VALUES ($1, $2, $3::jsonb)
-         RETURNING id, title, content, tags, created_at AS "createdAt"`,
-        [body.title, body.content, JSON.stringify(body.tags)],
+        `INSERT INTO rarecrest.shared_memory_records (title, content, tags, vertical, actor_id)
+         VALUES ($1, $2, $3::jsonb, $4, $5)
+         RETURNING id, title, content, tags, vertical, actor_id AS "actorId", created_at AS "createdAt"`,
+        [body.title, body.content, JSON.stringify(body.tags), request.auth.vertical, request.auth.userId],
       );
       return reply.status(201).send(result.rows[0]);
     } catch (err) {
@@ -130,9 +131,14 @@ export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) 
     }
   });
 
-  app.get("/api/v1/memory/records", async (_request, reply) => {
+  app.get("/api/v1/memory/records", async (request, reply) => {
+    const director = isVerifiedDirector(request.auth, request.headers);
     const result = await db.query(
-      `SELECT id, title, content, tags, created_at AS "createdAt" FROM rarecrest.shared_memory_records ORDER BY created_at DESC LIMIT 50`,
+      `SELECT id, title, content, tags, vertical, actor_id AS "actorId", created_at AS "createdAt"
+       FROM rarecrest.shared_memory_records
+       WHERE $1::boolean OR vertical = $2 OR vertical IS NULL
+       ORDER BY created_at DESC LIMIT 50`,
+      [director, request.auth.vertical],
     );
     return reply.send({ records: result.rows });
   });

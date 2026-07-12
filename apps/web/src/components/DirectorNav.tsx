@@ -21,6 +21,13 @@ export function DirectorNav({ route, entityId, entityName }: DirectorNavProps) {
       </button>
       <button
         type="button"
+        className={route.name === "command" ? "active" : undefined}
+        onClick={() => navigate({ name: "command" })}
+      >
+        Command Center
+      </button>
+      <button
+        type="button"
         disabled={!hasEntity}
         className={route.name === "diagnostics" ? "active" : undefined}
         onClick={() => entityId && navigate({ name: "diagnostics", entityId })}
@@ -58,6 +65,22 @@ export function DirectorNav({ route, entityId, entityName }: DirectorNavProps) {
         onClick={() => entityId && navigate({ name: "wiki", entityId })}
       >
         Wiki
+      </button>
+      <button
+        type="button"
+        disabled={!hasEntity}
+        className={route.name === "runtime" ? "active" : undefined}
+        onClick={() => entityId && navigate({ name: "runtime", entityId })}
+      >
+        Runtime
+      </button>
+      <button
+        type="button"
+        disabled={!hasEntity}
+        className={route.name === "legal" ? "active" : undefined}
+        onClick={() => entityId && navigate({ name: "legal", entityId })}
+      >
+        Legal
       </button>
       {entityName && (
         <span className="nav-entity" data-testid="nav-entity-context">

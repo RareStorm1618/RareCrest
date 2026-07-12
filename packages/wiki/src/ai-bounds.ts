@@ -30,7 +30,7 @@ export function classifyWikiPrincipal(input: {
 }): WikiPrincipalKind {
   const role = (input.role ?? "").toLowerCase().trim();
   const userId = (input.userId ?? "").toLowerCase();
-  if (role === "director" || userId === "director-1") return "director";
+  if (role === "director") return "director";
   if (HUMAN_ROLES.has(role)) return "human";
   if (AGENT_ROLES.has(role) || userId.startsWith("agent-") || userId.startsWith("svc-")) return "agent";
   if (role) return "unknown";

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { DatabaseClient } from "@rarecrest/db";
 import type { VerticalKey } from "@rarecrest/contracts";
 import { aggregateByMigrationMode } from "@rarecrest/portfolio";
 import { z } from "zod";
@@ -6,6 +7,7 @@ import type { AuthContext } from "../auth.js";
 import { formatZodErrors, verticalSchema } from "../validation.js";
 import { mapEntityRow, PortfolioService } from "../services/portfolio.js";
 import { isVerifiedDirector } from "../trust.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 const entityTypeSchema = z.enum([
   "nonprofit",
@@ -30,7 +32,11 @@ export function isDirectorScope(auth: AuthContext, request: { headers: Record<st
   return isVerifiedDirector(auth, request.headers);
 }
 
-export function registerPortfolioRoutes(app: FastifyInstance, portfolio: PortfolioService) {
+export function registerPortfolioRoutes(
+  app: FastifyInstance,
+  portfolio: PortfolioService,
+  db: DatabaseClient,
+) {
   app.get("/api/v1/portfolio/status", async (request, reply) => {
     const scope = isDirectorScope(request.auth, request) ? undefined : request.auth.vertical;
     const rollup = await portfolio.getRollup(scope);
@@ -99,8 +105,15 @@ export function registerPortfolioRoutes(app: FastifyInstance, portfolio: Portfol
 
   app.get("/api/v1/portfolio/entities/:id/attention-flags", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const flags = await portfolio.listAttentionFlags(id);
-    return reply.send(flags);
+    try {
+      const directorBypass = isDirectorScope(request.auth, request);
+      await assertEntityAccess(db, id, request.auth, directorBypass);
+      const flags = await portfolio.listAttentionFlags(id);
+      return reply.send(flags);
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.post("/api/v1/portfolio/relationships", async (request, reply) => {
@@ -112,6 +125,9 @@ export function registerPortfolioRoutes(app: FastifyInstance, portfolio: Portfol
     });
     try {
       const body = schema.parse(request.body);
+      const directorBypass = isDirectorScope(request.auth, request);
+      await assertEntityAccess(db, body.fromEntityId, request.auth, directorBypass);
+      await assertEntityAccess(db, body.toEntityId, request.auth, directorBypass);
       const rel = await portfolio.addRelationship(
         body.fromEntityId,
         body.toEntityId,
@@ -121,6 +137,7 @@ export function registerPortfolioRoutes(app: FastifyInstance, portfolio: Portfol
       return reply.status(201).send(rel);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });

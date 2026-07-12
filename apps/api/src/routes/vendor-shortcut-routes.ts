@@ -8,10 +8,19 @@ import {
 } from "@rarecrest/vendor-shortcut";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
+import { isVerifiedDirector } from "../trust.js";
 
 export function registerVendorShortcutRoutes(app: FastifyInstance, db: DatabaseClient) {
   app.get("/api/v1/vendor-shortcut/:entityId/inventory", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
+    try {
+      const directorBypass = isVerifiedDirector(request.auth, request.headers as never);
+      await assertEntityAccess(db, entityId, request.auth, directorBypass);
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
     const result = await db.query(
       `SELECT system_id AS "systemId", system_type AS "systemType", record_count AS "recordCount",
               exportable, data_freshness_hours AS "dataFreshnessHours", daily_change_rate_pct AS "dailyChangeRatePct"
@@ -44,6 +53,8 @@ export function registerVendorShortcutRoutes(app: FastifyInstance, db: DatabaseC
     });
     try {
       const body = schema.parse(request.body);
+      const directorBypass = isVerifiedDirector(request.auth, request.headers as never);
+      await assertEntityAccess(db, body.entityId, request.auth, directorBypass);
       for (const item of body.inventory) {
         await db.query(
           `INSERT INTO rarecrest.vendor_shortcut_inventory
@@ -64,6 +75,7 @@ export function registerVendorShortcutRoutes(app: FastifyInstance, db: DatabaseC
       return reply.status(201).send({ entityId: body.entityId, assessment });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
@@ -92,6 +104,8 @@ export function registerVendorShortcutRoutes(app: FastifyInstance, db: DatabaseC
     });
     try {
       const body = schema.parse(request.body);
+      const directorBypass = isVerifiedDirector(request.auth, request.headers as never);
+      await assertEntityAccess(db, body.entityId, request.auth, directorBypass);
       const mapping = buildDestinationMapping({
         entityId: body.entityId,
         inventory: body.inventory,
@@ -105,6 +119,7 @@ export function registerVendorShortcutRoutes(app: FastifyInstance, db: DatabaseC
       return reply.send(mapping);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });

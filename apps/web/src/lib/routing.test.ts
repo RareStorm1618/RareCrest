@@ -16,10 +16,19 @@ describe("web routing", () => {
     expect(parseHash("#/entities/abc/migration")).toEqual({ name: "migration", entityId: "abc" });
     expect(parseHash("#/entities/abc/companion")).toEqual({ name: "companion", entityId: "abc" });
     expect(parseHash("#/entities/abc/wiki")).toEqual({ name: "wiki", entityId: "abc" });
+    expect(parseHash("#/entities/abc/runtime")).toEqual({ name: "runtime", entityId: "abc" });
+    expect(parseHash("#/entities/abc/legal")).toEqual({ name: "legal", entityId: "abc" });
+  });
+
+  it("parses the command center route", () => {
+    expect(parseHash("#/command")).toEqual({ name: "command" });
   });
 
   it("round-trips hashes", () => {
     expect(routeToHash({ name: "portfolio" })).toBe("#/");
+    expect(routeToHash({ name: "command" })).toBe("#/command");
     expect(routeToHash({ name: "design", entityId: "e1" })).toBe("#/entities/e1/design");
+    expect(routeToHash({ name: "runtime", entityId: "e1" })).toBe("#/entities/e1/runtime");
+    expect(routeToHash({ name: "legal", entityId: "e1" })).toBe("#/entities/e1/legal");
   });
 });

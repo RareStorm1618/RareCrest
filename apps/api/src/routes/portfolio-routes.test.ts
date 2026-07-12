@@ -12,8 +12,8 @@ describe("isDirectorScope", () => {
     delete process.env.AUTH_TRUST_MODE;
   });
 
-  it("returns true for director-1 user id in dev mode", () => {
-    expect(isDirectorScope(auth, { headers: {} })).toBe(true);
+  it("returns false for director-1 user id without a director role (bypass removed)", () => {
+    expect(isDirectorScope(auth, { headers: {} })).toBe(false);
   });
 
   it("returns true when x-user-role is director in dev mode", () => {

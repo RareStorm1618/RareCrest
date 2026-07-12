@@ -1,7 +1,7 @@
 /** WO-17: Append-only DecisionTraceService */
 import type { DecisionTraceEntry, VerticalKey } from "@rarecrest/contracts";
 import type { DatabaseClient } from "@rarecrest/db";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export interface AppendTraceInput {
   entityId?: string;
@@ -19,11 +19,13 @@ export class DecisionTraceService {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
     const retentionRegime = input.retentionRegime ?? this.defaultRetention(input.vertical);
+    const prevHash = await this.latestContentHash(input.entityId);
+    const contentHash = computeTraceContentHash(input.entityId, input.action, input.payload);
 
     await this.db.query(
       `INSERT INTO rarecrest.decision_traces
-         (id, entity_id, vertical, action, verdict, payload, retention_regime, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         (id, entity_id, vertical, action, verdict, payload, retention_regime, created_at, prev_hash, content_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         id,
         input.entityId ?? null,
@@ -33,6 +35,8 @@ export class DecisionTraceService {
         JSON.stringify(input.payload),
         retentionRegime,
         createdAt,
+        prevHash,
+        contentHash,
       ],
     );
 
@@ -45,7 +49,29 @@ export class DecisionTraceService {
       payload: input.payload,
       createdAt,
       retentionRegime,
+      prevHash,
+      contentHash,
     };
+  }
+
+  /**
+   * Hash chain: each trace's content_hash covers entity+action+payload, and prev_hash
+   * links to the entity's most recent trace — a tamper-evident append-only chain even
+   * though the table itself already forbids UPDATE/DELETE.
+   */
+  private async latestContentHash(entityId?: string): Promise<string | null> {
+    if (!entityId) return null;
+    try {
+      const result = await this.db.query<{ content_hash: string | null }>(
+        `SELECT content_hash FROM rarecrest.decision_traces
+         WHERE entity_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [entityId],
+      );
+      return result.rows[0]?.content_hash ?? null;
+    } catch {
+      // Migration 023 may not be applied yet — chain degrades to null prev_hash rather than failing writes.
+      return null;
+    }
   }
 
   async listByEntity(entityId: string, limit = 100): Promise<DecisionTraceEntry[]> {
@@ -90,4 +116,15 @@ export class DecisionTraceService {
     };
     return regimes[vertical] ?? "standard-3yr";
   }
+}
+
+/** sha256(entityId + action + payload) — the per-trace link in the decision-trace hash chain. */
+export function computeTraceContentHash(
+  entityId: string | undefined,
+  action: string,
+  payload: Record<string, unknown>,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ entityId: entityId ?? null, action, payload }))
+    .digest("hex");
 }

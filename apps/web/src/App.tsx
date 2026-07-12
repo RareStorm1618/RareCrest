@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PortfolioRollup } from "@rarecrest/contracts";
 import { DualTrackView, ZeroAuthorityShell } from "@rarecrest/ui";
 import { API_BASE, API_HEADERS, createApiClient } from "./lib/api.js";
@@ -13,6 +13,10 @@ import { MigrationWorkspacePage } from "./components/MigrationWorkspacePage.js";
 import { CompanionPage } from "./components/CompanionPage.js";
 import { WikiPage } from "./components/WikiPage.js";
 import { CommandPalette } from "./components/CommandPalette.js";
+import { CommandCenterPage } from "./components/CommandCenterPage.js";
+import { EntityRegisterPanel } from "./components/EntityRegisterPanel.js";
+import { RuntimeOperationsPage } from "./components/RuntimeOperationsPage.js";
+import { LegalExportPage } from "./components/LegalExportPage.js";
 
 export function App() {
   const [route, setRoute] = useState<AppRoute>(() => parseHash(window.location.hash));
@@ -34,9 +38,9 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    client.health().then((h) => setHealth(h.status)).catch(() => setHealth("down"));
-    client
+  const loadRollup = useCallback(() => {
+    setLoading(true);
+    return client
       .getPortfolioStatus()
       .then((data) => {
         setRollup(data);
@@ -51,7 +55,12 @@ export function App() {
       .finally(() => setLoading(false));
   }, [client]);
 
-  const entityId = route.name === "portfolio" ? null : route.entityId;
+  useEffect(() => {
+    client.health().then((h) => setHealth(h.status)).catch(() => setHealth("down"));
+    loadRollup();
+  }, [client, loadRollup]);
+
+  const entityId = route.name === "portfolio" || route.name === "command" ? null : route.entityId;
   const selectedEntity =
     entityId && rollup ? rollup.entities.find((entity) => entity.id === entityId) : undefined;
   const entityName = selectedEntity?.name ?? entityId;
@@ -80,7 +89,12 @@ export function App() {
             <PortfolioBriefPanel rollup={rollup} />
           )}
           <PortfolioStatusView rollup={rollup} loading={loading} onSelectEntity={selectEntity} />
+          <EntityRegisterPanel apiBase={API_BASE} headers={API_HEADERS} onRegistered={loadRollup} />
         </>
+      )}
+
+      {route.name === "command" && (
+        <CommandCenterPage apiBase={API_BASE} headers={API_HEADERS} rollup={rollup} />
       )}
 
       {route.name === "diagnostics" && (
@@ -134,21 +148,42 @@ export function App() {
         />
       )}
 
+      {route.name === "runtime" && (
+        <RuntimeOperationsPage
+          entityId={route.entityId}
+          entityName={entityName ?? route.entityId}
+          apiBase={API_BASE}
+          headers={API_HEADERS}
+        />
+      )}
+
+      {route.name === "legal" && (
+        <LegalExportPage
+          entityId={route.entityId}
+          entityName={entityName ?? route.entityId}
+          apiBase={API_BASE}
+          headers={API_HEADERS}
+        />
+      )}
+
       <DualTrackView
         title="Director Surface Contract"
-        narrative="Client renders server-owned portfolio, diagnostics, design, migration, companion, and wiki state. Streaming companion and portfolio briefs never grant deployment authority."
+        narrative="Client renders server-owned portfolio, command center, diagnostics, design, migration, companion, wiki, runtime, and legal state. Streaming companion and portfolio briefs never grant deployment authority."
         schemaPayload={{
           authority: "none",
           route: route.name,
           entityId,
           features: [
             "portfolio-brief",
+            "command-center",
             "command-palette",
             "streaming-companion",
             "wiki-companion",
             "diagnostics",
             "design-studio",
             "migration-workspace",
+            "runtime-operations",
+            "legal-export",
           ],
         }}
       />

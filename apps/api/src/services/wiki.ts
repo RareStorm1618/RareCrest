@@ -43,6 +43,7 @@ import { VectorStoreClient } from "@rarecrest/vector-store";
 import { createWebSearchFromEnv, type WebSearchProvider } from "./web-search.js";
 import { loadSecret } from "../secrets.js";
 import { createObjectStoreFromEnv } from "@rarecrest/object-store";
+import { assertDbRateLimit, RateLimitError } from "./rate-limit.js";
 
 export class WikiError extends Error {
   constructor(
@@ -70,7 +71,7 @@ export class WikiService {
     this.searchProvider = opts?.searchProvider ?? createWebSearchFromEnv();
   }
 
-  /** Simple per-actor rate limit (fail-closed). */
+  /** Simple per-actor rate limit (fail-closed). In-memory only — use assertRateLimitDb for Postgres-backed limits. */
   assertRateLimit(key: string, max: number, windowMs: number) {
     const now = Date.now();
     const bucket = this.rateBuckets.get(key);
@@ -81,6 +82,18 @@ export class WikiService {
     bucket.count += 1;
     if (bucket.count > max) {
       throw new WikiError(`Rate limit exceeded for ${key}`, 429);
+    }
+  }
+
+  /** Postgres-backed rate limit (rarecrest.api_rate_limits); falls back to the in-memory bucket. */
+  async assertRateLimitDb(key: string, max: number, windowMs: number): Promise<void> {
+    try {
+      await assertDbRateLimit(this.db, key, max, windowMs);
+    } catch (err) {
+      if (err instanceof RateLimitError) {
+        throw new WikiError(err.message, err.statusCode);
+      }
+      throw err;
     }
   }
 
@@ -120,7 +133,18 @@ export class WikiService {
     sensitivity: WikiSensitivity;
     status?: string;
     actorId: string;
+    allowCanonOverwrite?: boolean;
   }) {
+    const existing = await this.db.query<{ status: string }>(
+      `SELECT status FROM rarecrest.wiki_pages WHERE namespace = $1 AND slug = $2`,
+      [input.namespace, input.slug],
+    );
+    if (existing.rows[0]?.status === "canon" && !input.allowCanonOverwrite) {
+      throw new WikiError(
+        "Canon pages are immutable without promote break-glass",
+        403,
+      );
+    }
     const result = await this.db.query(
       `INSERT INTO rarecrest.wiki_pages
          (namespace, vertical, entity_id, slug, title, page_type, body, frontmatter, status, sensitivity, created_by, updated_by)
@@ -458,6 +482,7 @@ export class WikiService {
       sensitivity: "internal",
       status: "canon",
       actorId,
+      allowCanonOverwrite: true,
     });
   }
 
@@ -486,6 +511,7 @@ export class WikiService {
       sensitivity: "internal",
       status: "canon",
       actorId,
+      allowCanonOverwrite: true,
     });
   }
 
@@ -518,15 +544,18 @@ export class WikiService {
     question: string,
     fileAnswer = false,
     actorId = "system",
-    opts?: { redactSensitive?: boolean },
+    opts?: { redactSensitive?: boolean; includeDrafts?: boolean },
   ) {
-    this.assertRateLimit(`query:${actorId}`, 60, 60_000);
+    await this.assertRateLimitDb(`query:${actorId}`, 60, 60_000);
     const redact = opts?.redactSensitive === true;
+    // Agents (and any caller opting out of drafts) see canon-only pages by default.
+    const includeDrafts = opts?.includeDrafts ?? true;
     const hot = await this.db.query(`SELECT body FROM rarecrest.wiki_hot_cache WHERE namespace = $1`, [namespace]);
     const pages = await this.db.query(
       `SELECT id, slug, title, body, sensitivity
        FROM rarecrest.wiki_pages
-       WHERE namespace = $1 AND page_type NOT IN ('log')`,
+       WHERE namespace = $1 AND page_type NOT IN ('log')
+         ${includeDrafts ? "" : "AND status = 'canon'"}`,
       [namespace],
     );
     const visiblePages = redact
@@ -781,7 +810,7 @@ export class WikiService {
 
     const charter = this.charter(input.vertical);
     if (!charter.allowAutoresearch) throw new WikiError("Autoresearch disabled for this charter", 403);
-    this.assertRateLimit(`autoresearch:${input.actorId}`, 5, 60_000);
+    await this.assertRateLimitDb(`autoresearch:${input.actorId}`, 5, 60_000);
 
     const rounds = input.rounds ?? 3;
     const researchRounds: Array<{
