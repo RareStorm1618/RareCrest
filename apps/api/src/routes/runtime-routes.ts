@@ -331,6 +331,53 @@ export function registerRuntimeRoutes(
               reviewId: id,
             });
           }
+
+          // Dual-control financial commit: first approval records pending_second;
+          // a different second approver is required before release (strict always; optional secondApproverId in body).
+          const existing = await db.query(
+            `SELECT id, first_approver_id AS "firstApproverId", status
+             FROM rarecrest.financial_commit_approvals
+             WHERE review_id = $1 AND status = 'pending_second'
+             ORDER BY created_at DESC LIMIT 1`,
+            [id],
+          );
+          if (existing.rows.length === 0) {
+            await db.query(
+              `INSERT INTO rarecrest.financial_commit_approvals
+                 (review_id, entity_id, human_instruction_id, first_approver_id, status)
+               VALUES ($1, $2, $3, $4, 'pending_second')`,
+              [id, pendingRow.entityId, humanInstructionId, request.auth.userId],
+            );
+            return reply.status(202).send({
+              reviewId: id,
+              status: "pending_second_approver",
+              message:
+                "Financial dual-control: first approval recorded. A different approver must resolve again to commit.",
+              firstApproverId: request.auth.userId,
+            });
+          }
+          const firstApproverId = existing.rows[0].firstApproverId as string;
+          if (firstApproverId === request.auth.userId) {
+            await appendDenyTrace(intelligence, {
+              vertical: request.auth.vertical,
+              entityId: pendingRow.entityId as string,
+              action: "held_action_release",
+              reason: "dual_control_same_actor",
+              route: "/api/v1/runtime/human-review/:id/resolve",
+              statusCode: 403,
+            });
+            return reply.status(403).send({
+              message: "Financial dual-control requires a different second approver",
+              reviewId: id,
+              firstApproverId,
+            });
+          }
+          await db.query(
+            `UPDATE rarecrest.financial_commit_approvals
+             SET second_approver_id = $1, status = 'committed', completed_at = NOW()
+             WHERE id = $2`,
+            [request.auth.userId, existing.rows[0].id],
+          );
         }
       }
 

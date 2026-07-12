@@ -1,16 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
-import { agentBlindRef, openPhi, parseMasterKey, sealPhi } from "@rarecrest/phi-vault";
+import {
+  agentBlindRef,
+  createKmsProviderFromEnv,
+  openWithKmsAsync,
+  sealWithKmsAsync,
+  type KmsProvider,
+} from "@rarecrest/phi-vault";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { trustMode } from "../auth.js";
-
-function masterKeyOrThrow(): Buffer {
-  const raw = process.env.PHI_MASTER_KEY;
-  if (!raw) throw new PhiVaultError("PHI_MASTER_KEY is not configured", 503);
-  return parseMasterKey(raw);
-}
+import { loadSecret } from "../secrets.js";
 
 export class PhiVaultError extends Error {
   constructor(
@@ -24,6 +25,26 @@ export class PhiVaultError extends Error {
 
 function isHumanDecryptRole(role: string | undefined): boolean {
   return role === "director" || role === "clinician" || role === "compliance_officer";
+}
+
+function kmsOrThrow(): KmsProvider {
+  // Prefer KEK / remote KMS; allow PHI_MASTER_KEY only as legacy KEK material via createKmsProviderFromEnv.
+  if (trustMode() === "strict" && !loadSecret("PHI_KMS_KEK") && !loadSecret("PHI_KMS_ENDPOINT")) {
+    throw new PhiVaultError(
+      "Strict mode requires PHI_KMS_KEK or PHI_KMS_ENDPOINT (raw PHI_MASTER_KEY alone is not enough)",
+      503,
+    );
+  }
+  try {
+    // Ensure env vars from *_FILE are visible to createKmsProviderFromEnv
+    const kek = loadSecret("PHI_KMS_KEK");
+    if (kek && !process.env.PHI_KMS_KEK) process.env.PHI_KMS_KEK = kek;
+    const master = loadSecret("PHI_MASTER_KEY");
+    if (master && !process.env.PHI_MASTER_KEY) process.env.PHI_MASTER_KEY = master;
+    return createKmsProviderFromEnv();
+  } catch (err) {
+    throw new PhiVaultError((err as Error).message, 503);
+  }
 }
 
 export async function entityEncryptionLayerPresent(
@@ -63,6 +84,7 @@ export function registerPhiVaultRoutes(app: FastifyInstance, db: DatabaseClient)
         keyId: body.keyId,
         encryptionLayerPresent: true,
         registeredBy: request.auth.userId,
+        kmsWrapped: true,
       });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
@@ -97,17 +119,18 @@ export function registerPhiVaultRoutes(app: FastifyInstance, db: DatabaseClient)
           message: "Entity encryption layer not registered — refuse to accept PHI",
         });
       }
-      const key = masterKeyOrThrow();
-      const sealed = sealPhi({
+      const kms = kmsOrThrow();
+      const sealed = await sealWithKmsAsync({
         plaintext: body.plaintext,
         entityId: body.entityId,
         purpose: body.purpose,
-        masterKey: key,
+        kms,
       });
       const inserted = await db.query(
         `INSERT INTO rarecrest.phi_envelopes
-           (entity_id, purpose, ciphertext, nonce, key_id, aad_hash, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           (entity_id, purpose, ciphertext, nonce, key_id, aad_hash, created_by,
+            wrapped_dek, wrap_nonce, wrap_key_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
           body.entityId,
@@ -117,10 +140,16 @@ export function registerPhiVaultRoutes(app: FastifyInstance, db: DatabaseClient)
           sealed.keyId,
           sealed.aadHash,
           request.auth.userId,
+          sealed.wrappedDek ?? null,
+          sealed.wrapNonce ?? null,
+          sealed.wrapKeyId ?? null,
         ],
       );
       const envelopeId = inserted.rows[0].id as string;
-      return reply.status(201).send(agentBlindRef(envelopeId, body.purpose, sealed.keyId));
+      return reply.status(201).send({
+        ...agentBlindRef(envelopeId, body.purpose, sealed.keyId),
+        wrapKeyId: sealed.wrapKeyId,
+      });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
       if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
@@ -148,12 +177,13 @@ export function registerPhiVaultRoutes(app: FastifyInstance, db: DatabaseClient)
     }
   });
 
-  /** Human-only decrypt. Agents (role=agent or missing human role in strict) are denied. */
+  /** Human-only decrypt. Agents are denied. Opens via KMS-unwrapped DEK. */
   app.post("/api/v1/phi/envelopes/:id/decrypt", async (request, reply) => {
     const { id } = request.params as { id: string };
     try {
       const result = await db.query(
-        `SELECT id, entity_id AS "entityId", purpose, ciphertext, nonce, key_id AS "keyId", aad_hash AS "aadHash"
+        `SELECT id, entity_id AS "entityId", purpose, ciphertext, nonce, key_id AS "keyId",
+                aad_hash AS "aadHash", wrapped_dek AS "wrappedDek", wrap_nonce AS "wrapNonce"
          FROM rarecrest.phi_envelopes WHERE id = $1`,
         [id],
       );
@@ -173,14 +203,16 @@ export function registerPhiVaultRoutes(app: FastifyInstance, db: DatabaseClient)
         });
       }
 
-      const key = masterKeyOrThrow();
-      const plaintext = openPhi({
+      const kms = kmsOrThrow();
+      const plaintext = await openWithKmsAsync({
         ciphertext: row.ciphertext as string,
         nonce: row.nonce as string,
         entityId: row.entityId as string,
         purpose: row.purpose as string,
-        masterKey: key,
         aadHash: row.aadHash as string,
+        wrappedDek: (row.wrappedDek as string | null) ?? undefined,
+        wrapNonce: (row.wrapNonce as string | null) ?? undefined,
+        kms,
       });
       await db.query(
         `INSERT INTO rarecrest.phi_decrypt_audit (envelope_id, actor_id, actor_role, denied)

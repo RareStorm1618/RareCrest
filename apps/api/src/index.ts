@@ -36,8 +36,10 @@ import { registerIpRoutes } from "./routes/ip-routes.js";
 import { registerDesignStudioRoutes } from "./routes/design-studio-routes.js";
 import { registerKillSwitchRoutes } from "./routes/kill-switch-routes.js";
 import { registerPhiVaultRoutes } from "./routes/phi-vault-routes.js";
+import { registerAuthRevocationRoutes } from "./routes/auth-revocation-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
+import { loadSecret } from "./secrets.js";
 import { z } from "zod";
 
 const PORT = Number(process.env.API_PORT ?? 3000);
@@ -50,21 +52,23 @@ export async function buildApp() {
     connectionString: process.env.DATABASE_URL ?? "",
   });
 
+  const internalServiceToken = loadSecret("INTERNAL_SERVICE_TOKEN");
+
   const governance = new GovernanceClient({
     baseUrl: process.env.GOVERNANCE_ENGINE_URL ?? "http://localhost:3001",
-    internalServiceToken: process.env.INTERNAL_SERVICE_TOKEN,
+    internalServiceToken,
   });
 
   const intelligence = new IntelligenceClient({
     baseUrl: process.env.INTELLIGENCE_SERVICES_URL ?? "http://localhost:3002",
-    internalServiceToken: process.env.INTERNAL_SERVICE_TOKEN,
+    internalServiceToken,
   });
 
   await app.register(cors, { origin: true });
 
   app.addHook("preHandler", async (request) => {
     if (request.url === "/health") return;
-    request.auth = await resolveAuth(request);
+    request.auth = await resolveAuth(request, { db });
   });
 
   app.get("/health", async () => {
@@ -106,6 +110,7 @@ export async function buildApp() {
   registerDesignStudioRoutes(app, db);
   registerKillSwitchRoutes(app, db, governance);
   registerPhiVaultRoutes(app, db);
+  registerAuthRevocationRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

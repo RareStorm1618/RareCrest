@@ -1,6 +1,8 @@
 import type { FastifyRequest } from "fastify";
 import type { VerticalKey } from "@rarecrest/contracts";
+import type { DatabaseClient } from "@rarecrest/db";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { TokenRevocationService } from "./services/token-revocation.js";
 
 export type AuthMethod = "header" | "oidc";
 
@@ -10,6 +12,8 @@ export interface AuthContext {
   entityId?: string;
   role?: string;
   authMethod: AuthMethod;
+  jti?: string;
+  tokenIat?: number;
 }
 
 declare module "fastify" {
@@ -90,7 +94,7 @@ function jwksFor(url: string) {
 
 /**
  * Verify Bearer JWT via OIDC JWKS and/or local HS256 secret (JWT_SECRET).
- * Claims: sub (user), vertical|https://rarecrest.ai/vertical, role|https://rarecrest.ai/role
+ * Claims: sub (user), vertical|https://rarecrest.ai/vertical, role|https://rarecrest.ai/role, jti
  */
 export async function verifyOidcToken(token: string): Promise<AuthContext> {
   const issuer = process.env.OIDC_ISSUER;
@@ -132,6 +136,12 @@ export async function verifyOidcToken(token: string): Promise<AuthContext> {
 
   const role = claimString(payload, "role", "https://rarecrest.ai/role");
   const entityId = claimString(payload, "entity_id", "entityId", "https://rarecrest.ai/entity_id");
+  const jti = claimString(payload, "jti");
+  const tokenIat = typeof payload.iat === "number" ? payload.iat : undefined;
+
+  if (trustMode() === "strict" && !jti) {
+    throw new AuthError("Token missing jti claim — required for revocation in strict mode");
+  }
 
   return {
     userId,
@@ -139,6 +149,8 @@ export async function verifyOidcToken(token: string): Promise<AuthContext> {
     entityId,
     role,
     authMethod: "oidc",
+    jti,
+    tokenIat,
   };
 }
 
@@ -163,26 +175,46 @@ export function extractAuthFromHeaders(headers: Record<string, unknown>): AuthCo
   };
 }
 
+export type ResolveAuthOptions = {
+  db?: DatabaseClient;
+};
+
 /**
  * Resolve auth for a request.
- * - Bearer present → OIDC/JWT path (always)
+ * - Bearer present → OIDC/JWT path (always), then denylist check when db provided
  * - AUTH_TRUST_MODE=strict → Bearer required (headers alone are rejected)
  * - AUTH_TRUST_MODE=dev → headers allowed for local demos
  */
-export async function resolveAuth(request: FastifyRequest): Promise<AuthContext> {
+export async function resolveAuth(
+  request: FastifyRequest,
+  options: ResolveAuthOptions = {},
+): Promise<AuthContext> {
   const headers = request.headers as Record<string, unknown>;
   const token = bearerToken(headers);
   const mode = trustMode();
 
+  let auth: AuthContext;
   if (token) {
-    return verifyOidcToken(token);
-  }
-
-  if (mode === "strict") {
+    auth = await verifyOidcToken(token);
+  } else if (mode === "strict") {
     throw new AuthError("Bearer token required when AUTH_TRUST_MODE=strict");
+  } else {
+    auth = extractAuthFromHeaders(headers);
   }
 
-  return extractAuthFromHeaders(headers);
+  if (options.db && auth.authMethod === "oidc") {
+    const revocations = new TokenRevocationService(options.db);
+    const check = await revocations.isRevoked({
+      subject: auth.userId,
+      jti: auth.jti,
+      tokenIat: auth.tokenIat,
+    });
+    if (check.revoked) {
+      throw new AuthError(`Token revoked: ${check.reason ?? "session invalidated"}`);
+    }
+  }
+
+  return auth;
 }
 
 /** @deprecated Prefer resolveAuth — sync header-only helper for unit tests/dev. */

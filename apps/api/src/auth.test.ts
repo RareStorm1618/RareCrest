@@ -61,6 +61,7 @@ describe("auth", () => {
     })
       .setProtectedHeader({ alg: "HS256" })
       .setSubject("director-oidc-1")
+      .setJti("jti-test-1")
       .setIssuedAt()
       .setExpirationTime("2h")
       .sign(new TextEncoder().encode(process.env.JWT_SECRET));
@@ -70,6 +71,22 @@ describe("auth", () => {
     expect(auth.vertical).toBe("holding");
     expect(auth.role).toBe("director");
     expect(auth.authMethod).toBe("oidc");
+    expect(auth.jti).toBe("jti-test-1");
+  });
+
+  it("requires jti in strict mode", async () => {
+    process.env.AUTH_TRUST_MODE = "strict";
+    const token = await new SignJWT({
+      vertical: "holding",
+      role: "director",
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject("director-oidc-1")
+      .setIssuedAt()
+      .setExpirationTime("2h")
+      .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+
+    await expect(verifyOidcToken(token)).rejects.toThrow(/jti/);
   });
 
   it("enforces tenancy — rejects cross-vertical access", () => {
