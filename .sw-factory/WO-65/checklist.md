@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-65
 
 **Work Order Number:** WO-65
-**Work Order Title:** WO-65 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:54Z
+**Work Order Title:** Implement PriorityRanker and DecisionRelayService (API Server)
+**Initialized At (UTC):** 2026-07-12T01:03:59Z
 
 ## Phase 1: Start / Context Gathering
 

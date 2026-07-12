@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
 import type { GovernanceClient } from "@rarecrest/governance-client";
@@ -144,66 +143,15 @@ export function registerPhaseRoutes(
 
   // WO-36: AttentionFlagService — see attention-flag-routes.ts (canonical)
 
-  // WO-38: CrossSkillWorkflowRunner
-  app.post("/api/v1/workflows/run", async (request, reply) => {
-    const schema = z.object({ workflowId: z.string(), entityId: z.string().uuid(), steps: z.array(z.string()) });
-    const body = schema.parse(request.body);
-    return reply.send({ workflowId: body.workflowId, status: "completed", stepsCompleted: body.steps.length });
-  });
+  // WO-38: CrossSkillWorkflowRunner — see workflow-routes.ts (canonical)
 
-  // WO-43: PermissionEnvelopeValidator
-  app.post("/api/v1/agents/validate-permissions", async (request, reply) => {
-    const verdict = await governance.checkHardRules(request.body as never);
-    return reply.send({ ...verdict, deployable: verdict.allowed });
-  });
+  // WO-43: PermissionEnvelopeValidator — see agent-studio-routes.ts (canonical)
 
-  // WO-51: RewriteStepTracker
-  app.post("/api/v1/migration/rewrite-steps", async (request, reply) => {
-    const schema = z.object({ entityId: z.string().uuid(), steps: z.array(z.object({ name: z.string(), status: z.string() })) });
-    const body = schema.parse(request.body);
-    return reply.send({ entityId: body.entityId, steps: body.steps, trackedAt: new Date().toISOString() });
-  });
+  // WO-51/52/53: Migration workspace — see migration-workspace-routes.ts (canonical)
 
-  // WO-52: EdgeTwinPlanner
-  app.post("/api/v1/migration/edge-twin", async (request, reply) => {
-    const schema = z.object({ entityId: z.string().uuid(), parallelRunWeeks: z.number().min(1) });
-    const body = schema.parse(request.body);
-    return reply.send({ entityId: body.entityId, plan: { parallelRunWeeks: body.parallelRunWeeks, phases: ["shadow", "compare", "cutover"] } });
-  });
+  // WO-57: LegalMatterService — see legal-routes.ts (canonical)
 
-  // WO-53: OverrideTrendTracker + DeprecationGate
-  app.get("/api/v1/migration/override-trends/:entityId", async (request, reply) => {
-    const { entityId } = request.params as { entityId: string };
-    return reply.send({ entityId, overrides: [], deprecationBlocked: false });
-  });
-
-  // WO-57: LegalMatterService
-  app.post("/api/v1/legal/matters", async (request, reply) => {
-    const schema = z.object({ title: z.string(), entityId: z.string().uuid(), status: z.string().default("open") });
-    const body = schema.parse(request.body);
-    return reply.status(201).send({ id: randomUUID(), ...body, disclaimer: "Not legal advice — escalate to counsel" });
-  });
-
-  // WO-64: MorningBriefGenerator
-  app.get("/api/v1/command/morning-brief", async (request, reply) => {
-    return reply.send({
-      date: new Date().toISOString().split("T")[0],
-      priorities: ["Review portfolio status", "Complete kill switch test", "Check attention flags"],
-      entitiesRequiringAction: [],
-    });
-  });
-
-  // WO-65: PriorityRanker
-  app.get("/api/v1/command/priorities", async (request, reply) => {
-    return reply.send({ ranked: [{ rank: 1, item: "Kill switch compliance" }, { rank: 2, item: "Assessment completion" }] });
-  });
-
-  // WO-66: Shared Memory
-  app.post("/api/v1/memory/records", async (request, reply) => {
-    const schema = z.object({ title: z.string(), content: z.string(), tags: z.array(z.string()).default([]) });
-    const body = schema.parse(request.body);
-    return reply.status(201).send({ id: randomUUID(), ...body, createdAt: new Date().toISOString() });
-  });
+  // WO-64/65/66: Command surface — see command-routes.ts (canonical)
 
   // WO-68: AgentRoster
   app.get("/api/v1/runtime/agents", async (_request, reply) => {

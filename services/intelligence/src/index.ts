@@ -69,10 +69,18 @@ export async function buildIntelligenceApp() {
     },
   );
 
-  app.post<{ Body: { entityId: string; vertical: string; question: string; context?: string[] } }>(
+  app.post<{ Body: { entityId: string; vertical: string; question: string; context?: string[]; requestKind?: string; entityContext?: object | null } }>(
     "/rpc/skill-companion/complete",
     async (request, reply) => {
-      const result = await companion.complete(request.body);
+      const result = await companion.complete(request.body as never);
+      return reply.send(result);
+    },
+  );
+
+  app.post<{ Body: { kind: string; entityContext: object | null } }>(
+    "/rpc/framing-guard/evaluate",
+    async (request, reply) => {
+      const result = companion.evaluateGuard(request.body.kind as never, request.body.entityContext as never);
       return reply.send(result);
     },
   );

@@ -1,5 +1,6 @@
-/** WO-18: SkillCompanionService RAG pipeline with streamed, validated output */
+/** WO-18 + WO-37: SkillCompanionService with FramingRuleGuard */
 import { z } from "zod";
+import { evaluateGuard, type EntityContext, type RequestKind } from "@rarecrest/skill-companion";
 import type { ModelRouter } from "./model-router.js";
 
 export const structuredResponseSchema = z.object({
@@ -16,6 +17,8 @@ export interface SkillQuery {
   vertical: string;
   question: string;
   context?: string[];
+  requestKind?: RequestKind;
+  entityContext?: EntityContext | null;
 }
 
 export class SkillCompanionService {
@@ -31,7 +34,17 @@ export class SkillCompanionService {
     }
   }
 
-  async complete(query: SkillQuery): Promise<StructuredResponse> {
+  async complete(query: SkillQuery): Promise<StructuredResponse & { guard?: ReturnType<typeof evaluateGuard> }> {
+    const guard = evaluateGuard(query.requestKind ?? "substantive", query.entityContext ?? null);
+    if (!guard.allowed) {
+      return {
+        summary: guard.reason ?? "Request blocked by FramingRuleGuard",
+        recommendations: guard.redirectTo ? [`Redirect: ${guard.redirectTo}`] : [],
+        confidence: 1,
+        sources: ["framing-rule-guard"],
+        guard,
+      };
+    }
     const prompt = this.buildPrompt(query);
     const response = await this.router.route({ prompt, maxTokens: 1024 });
 
@@ -42,7 +55,11 @@ export class SkillCompanionService {
       sources: query.context ?? ["framework-canon"],
     };
 
-    return structuredResponseSchema.parse(candidate);
+    return { ...structuredResponseSchema.parse(candidate), guard };
+  }
+
+  evaluateGuard(kind: RequestKind, context: EntityContext | null) {
+    return evaluateGuard(kind, context);
   }
 
   private buildPrompt(query: SkillQuery): string {

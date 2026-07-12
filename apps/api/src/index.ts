@@ -17,6 +17,11 @@ import { registerMigrationRoutes } from "./routes/migration-routes.js";
 import { registerTaskDecompositionRoutes } from "./routes/task-decomposition-routes.js";
 import { registerRegulatoryProfileRoutes } from "./routes/regulatory-profile-routes.js";
 import { registerAttentionFlagRoutes } from "./routes/attention-flag-routes.js";
+import { registerWorkflowRoutes } from "./routes/workflow-routes.js";
+import { registerAgentStudioRoutes } from "./routes/agent-studio-routes.js";
+import { registerMigrationWorkspaceRoutes } from "./routes/migration-workspace-routes.js";
+import { registerLegalRoutes } from "./routes/legal-routes.js";
+import { registerCommandRoutes } from "./routes/command-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { z } from "zod";
 
@@ -64,6 +69,11 @@ export async function buildApp() {
   registerTaskDecompositionRoutes(app, db);
   registerRegulatoryProfileRoutes(app, db);
   registerAttentionFlagRoutes(app, db);
+  registerWorkflowRoutes(app, db, intelligence);
+  registerAgentStudioRoutes(app, db, governance);
+  registerMigrationWorkspaceRoutes(app, db);
+  registerLegalRoutes(app, db);
+  registerCommandRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

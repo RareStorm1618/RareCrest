@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-37
 
 **Work Order Number:** WO-37
-**Work Order Title:** WO-37 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:42Z
+**Work Order Title:** Implement FramingRuleGuard and diagnostic gate (Intelligence Services)
+**Initialized At (UTC):** 2026-07-12T01:03:57Z
 
 ## Phase 1: Start / Context Gathering
 

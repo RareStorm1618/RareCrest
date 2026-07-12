@@ -20,6 +20,12 @@ importers:
       '@fastify/cors':
         specifier: ^11.0.1
         version: 11.3.0
+      '@rarecrest/agent-studio':
+        specifier: workspace:*
+        version: link:../../packages/agent-studio
+      '@rarecrest/command-surface':
+        specifier: workspace:*
+        version: link:../../packages/command-surface
       '@rarecrest/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -35,9 +41,18 @@ importers:
       '@rarecrest/intelligence-client':
         specifier: workspace:*
         version: link:../../packages/intelligence-client
+      '@rarecrest/legal-compliance':
+        specifier: workspace:*
+        version: link:../../packages/legal-compliance
+      '@rarecrest/migration-workspace':
+        specifier: workspace:*
+        version: link:../../packages/migration-workspace
       '@rarecrest/portfolio':
         specifier: workspace:*
         version: link:../../packages/portfolio
+      '@rarecrest/skill-companion':
+        specifier: workspace:*
+        version: link:../../packages/skill-companion
       fastify:
         specifier: ^5.4.0
         version: 5.10.0
@@ -126,11 +141,37 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
 
+  packages/agent-studio:
+    dependencies:
+      '@rarecrest/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
   packages/api-client:
     dependencies:
       '@rarecrest/contracts':
         specifier: workspace:*
         version: link:../contracts
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
+  packages/command-surface:
+    dependencies:
+      '@rarecrest/portfolio':
+        specifier: workspace:*
+        version: link:../portfolio
     devDependencies:
       typescript:
         specifier: ^5.8.3
@@ -202,6 +243,24 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
 
+  packages/legal-compliance:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
+  packages/migration-workspace:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
   packages/object-store:
     devDependencies:
       typescript:
@@ -223,6 +282,22 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
+  packages/skill-companion:
+    dependencies:
+      '@rarecrest/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+      zod:
+        specifier: ^3.25.67
+        version: 3.25.76
 
   packages/ui:
     dependencies:
@@ -257,6 +332,9 @@ importers:
       '@rarecrest/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rarecrest/skill-companion':
+        specifier: workspace:*
+        version: link:../../packages/skill-companion
       fastify:
         specifier: ^5.4.0
         version: 5.10.0

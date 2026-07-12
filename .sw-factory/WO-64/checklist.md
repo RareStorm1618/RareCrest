@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-64
 
 **Work Order Number:** WO-64
-**Work Order Title:** WO-64 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:53Z
+**Work Order Title:** Implement MorningBriefGenerator and AttentionQueueService (API Server)
+**Initialized At (UTC):** 2026-07-12T01:03:59Z
 
 ## Phase 1: Start / Context Gathering
 

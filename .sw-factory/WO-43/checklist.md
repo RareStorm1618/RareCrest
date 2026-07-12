@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-43
 
 **Work Order Number:** WO-43
-**Work Order Title:** WO-43 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:45Z
+**Work Order Title:** Implement PermissionEnvelopeValidator and hard-rule clearance (API Server)
+**Initialized At (UTC):** 2026-07-12T01:03:58Z
 
 ## Phase 1: Start / Context Gathering
 

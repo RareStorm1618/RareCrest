@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@rarecrest/contracts": "workspace:*",
+    "@rarecrest/skill-companion": "workspace:*",
     "@rarecrest/db": "workspace:*",
     "fastify": "^5.4.0"
   },
