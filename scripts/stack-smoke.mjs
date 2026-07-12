@@ -61,13 +61,13 @@ async function checkGovernanceRpc() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        agentId: "smoke-agent",
-        entityId: "00000000-0000-4000-8000-000000000099",
+        agent_id: "smoke-agent",
+        entity_id: "00000000-0000-4000-8000-000000000099",
         vertical: "rareangels",
-        requestedRights: ["sensitive_data"],
-        touchesPhi: false,
-        touchesFinancial: false,
-        encryptionLayerPresent: true,
+        requested_rights: ["sensitive_data"],
+        touches_phi: false,
+        touches_financial: false,
+        encryption_layer_present: true,
       }),
     });
     if (!verdict.ok) throw new Error(`hard-rule-check ${verdict.status}`);
