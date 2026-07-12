@@ -65,6 +65,7 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile || pnpm install
+      - run: pnpm --filter @rarecrest/contracts build
       - run: pnpm --filter @rarecrest/db build
       - name: Bootstrap database schema
         env:
