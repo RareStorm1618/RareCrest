@@ -79,7 +79,24 @@ export class PortfolioService {
         JSON.stringify(regimes),
       ],
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    try {
+      const { WikiService } = await import("./wiki.js");
+      const wiki = new WikiService(this.db);
+      await wiki.ingest({
+        namespace: `entity/${row.id}/working`,
+        vertical: input.vertical,
+        entityId: row.id,
+        title: `Overview: ${input.name}`,
+        body: `# ${input.name}\n\nEntity working wiki seeded at registration.\n\n- Vertical: ${input.vertical}\n- Type: ${input.entityType}\n`,
+        sourceKind: "structured_doc",
+        sensitivity: "internal",
+        actorId: "system-bootstrap",
+      });
+    } catch {
+      // wiki seed must not block entity registration
+    }
+    return row;
   }
 
   async getRollup(scopeVertical?: VerticalKey): Promise<PortfolioRollup> {

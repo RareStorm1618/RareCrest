@@ -27,6 +27,18 @@ export function registerGovernanceGatewayRoutes(
         verdict: verdict.allowed ? "allow" : "deny",
         payload: { traceId: verdict.traceId, reasons: verdict.reasons },
       });
+      // Best-effort: pull new traces into entity wiki (Private Canon Fortress)
+      void import("../services/wiki.js")
+        .then(({ WikiService }) =>
+          new WikiService(db).ingestDecisionTraces({
+            namespace: `entity/${body.entityId}/working`,
+            vertical: body.vertical,
+            entityId: body.entityId,
+            actorId: request.auth.userId,
+            limit: 5,
+          }),
+        )
+        .catch(() => undefined);
       return reply.send(verdict);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));

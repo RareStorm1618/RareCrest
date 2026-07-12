@@ -65,6 +65,36 @@ export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) 
       queue.filter((q) => q.kind === "awareness"),
       [],
     );
+    // Wiki health section (Private Canon Fortress)
+    try {
+      const lint = await db.query(
+        `SELECT id, namespace, score, created_at FROM rarecrest.wiki_lint_reports
+         WHERE score < 80 ORDER BY created_at DESC LIMIT 8`,
+      );
+      const pending = await db.query(
+        `SELECT id, page_id FROM rarecrest.wiki_promotions WHERE status = 'pending_second' LIMIT 8`,
+      );
+      const wikiItems = [
+        ...lint.rows.map((r) => ({
+          id: String(r.id),
+          label: `Wiki lint score ${r.score} · ${r.namespace}`,
+          linkPath: "#/",
+          sourceFeature: "wiki",
+        })),
+        ...pending.rows.map((r) => ({
+          id: String(r.id),
+          label: `Pending wiki promote dual-control`,
+          linkPath: "#/",
+          sourceFeature: "wiki",
+        })),
+      ];
+      if (wikiItems.length > 0) {
+        brief.sections.push({ type: "wiki_health", items: wikiItems });
+        brief.unchanged = false;
+      }
+    } catch {
+      // wiki tables may be absent
+    }
     await db.query(
       `INSERT INTO rarecrest.director_sessions (director_id, last_engaged_at) VALUES ($1, NOW())`,
       [directorId],

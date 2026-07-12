@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { extractSections } from "./markdown.js";
 import { slugify, type WikiSensitivity } from "./charter.js";
+import { scrubSecretsAndPhi } from "./scrub.js";
 
 export interface IngestCompileInput {
   title: string;
@@ -8,12 +9,14 @@ export interface IngestCompileInput {
   sourceKind: string;
   sensitivity: WikiSensitivity;
   phiBlind: boolean;
+  /** When set, used as content_hash (e.g. stable decision-trace id hash). */
+  contentHashOverride?: string;
 }
 
 export interface CompiledWikiPage {
   slug: string;
   title: string;
-  pageType: "source" | "entity" | "concept";
+  pageType: "source" | "entity" | "concept" | "decision";
   body: string;
   frontmatter: Record<string, unknown>;
   sensitivity: WikiSensitivity;
@@ -31,24 +34,29 @@ export function compileIngest(input: IngestCompileInput): {
   let body = input.body;
   let sensitivity = input.sensitivity;
 
+  // Always scrub secrets; escalate care charters to phi_ref
+  {
+    const scrubbed = scrubSecretsAndPhi(body);
+    body = scrubbed.text;
+  }
   if (input.phiBlind || sensitivity === "phi_ref") {
-    // Strip anything that looks like SSN / MRN-ish digits for care charters
-    body = body.replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[REDACTED]");
-    body = body.replace(/\bMRN[:\s]*\d+\b/gi, "[PHI_REF]");
     sensitivity = "phi_ref";
   }
 
-  const contentHash = createHash("sha256").update(`${input.title}\n${body}`).digest("hex");
+  const contentHash =
+    input.contentHashOverride ?? createHash("sha256").update(`${input.title}\n${body}`).digest("hex");
   const sourceSlug = slugify(`source-${input.title}`);
   const sections = extractSections(body);
+  const primaryType: CompiledWikiPage["pageType"] =
+    input.sourceKind === "decision_trace" ? "decision" : "source";
   const pages: CompiledWikiPage[] = [
     {
       slug: sourceSlug,
       title: input.title,
-      pageType: "source",
+      pageType: primaryType,
       body: `# ${input.title}\n\n${body}\n\n## Sections\n\n${sections.map((s) => `- [[${s.heading}]]`).join("\n")}\n`,
       frontmatter: {
-        tags: ["source", input.sourceKind],
+        tags: [primaryType === "decision" ? "decision" : "source", input.sourceKind],
         sourceKind: input.sourceKind,
         sensitivity,
       },
@@ -56,32 +64,36 @@ export function compileIngest(input: IngestCompileInput): {
     },
   ];
 
-  // Concept pages from H2 headings
-  for (const section of sections.filter((s) => s.heading !== "preamble").slice(0, 8)) {
-    const conceptSlug = slugify(section.heading);
-    pages.push({
-      slug: conceptSlug,
-      title: section.heading,
-      pageType: "concept",
-      body: `# ${section.heading}\n\n${section.content.trim()}\n\nSee also: [[${input.title}]]\n`,
-      frontmatter: { tags: ["concept"], sourcedFrom: sourceSlug },
-      sensitivity,
-    });
+  // Concept pages from H2 headings (skip for decision_trace — payload JSON is not concepts)
+  if (input.sourceKind !== "decision_trace") {
+    for (const section of sections.filter((s) => s.heading !== "preamble").slice(0, 8)) {
+      const conceptSlug = slugify(section.heading);
+      pages.push({
+        slug: conceptSlug,
+        title: section.heading,
+        pageType: "concept",
+        body: `# ${section.heading}\n\n${section.content.trim()}\n\nSee also: [[${input.title}]]\n`,
+        frontmatter: { tags: ["concept"], sourcedFrom: sourceSlug },
+        sensitivity,
+      });
+    }
   }
 
   // Entity heuristic: lines like "Entity: Name" or "**Name** (org)"
-  const entityMatches = body.match(/(?:Entity|Organization|Company|Person):\s*(.+)/gi) ?? [];
-  for (const line of entityMatches.slice(0, 5)) {
-    const name = line.split(":").slice(1).join(":").trim();
-    if (!name) continue;
-    pages.push({
-      slug: slugify(name),
-      title: name,
-      pageType: "entity",
-      body: `# ${name}\n\nMentioned in [[${input.title}]].\n`,
-      frontmatter: { tags: ["entity"], sourcedFrom: sourceSlug },
-      sensitivity,
-    });
+  if (input.sourceKind !== "decision_trace") {
+    const entityMatches = body.match(/(?:Entity|Organization|Company|Person):\s*(.+)/gi) ?? [];
+    for (const line of entityMatches.slice(0, 5)) {
+      const name = line.split(":").slice(1).join(":").trim();
+      if (!name) continue;
+      pages.push({
+        slug: slugify(name),
+        title: name,
+        pageType: "entity",
+        body: `# ${name}\n\nMentioned in [[${input.title}]].\n`,
+        frontmatter: { tags: ["entity"], sourcedFrom: sourceSlug },
+        sensitivity,
+      });
+    }
   }
 
   const summary = `Compiled ${pages.length} pages from '${input.title}' (${sensitivity})`;

@@ -5,6 +5,23 @@ import { personalizedPageRank, buildAdjacency, rankPages, analyseGraph } from ".
 import { lintWiki } from "./lint.js";
 import { compileIngest, hybridRank, lexicalScore, bagEmbedding } from "./ingest.js";
 import { defuddleHtml, pagesToCanvas, renderThinkingSession, THINKING_PRINCIPLES } from "./export.js";
+import { formatDecisionTraceForWiki } from "./decision-trace-ingest.js";
+import { isBlockedFetchUrl, synthesizeAutoresearchBody, rankSearchHits } from "./web-research.js";
+import {
+  isDirectorObsidianNamespace,
+  filterObsidianSyncPages,
+  isObsidianSyncSafeSensitivity,
+  buildObsidianSyncToken,
+} from "./obsidian-sync.js";
+import {
+  buildVaultPackagePlain,
+  encryptVaultPackage,
+  decryptVaultPackage,
+  vaultPackageToTree,
+} from "./vault-package.js";
+import { classifyWikiPrincipal, assertWikiVerbAllowed } from "./ai-bounds.js";
+import { isBlockedIpAddress } from "./web-research.js";
+import { looksLikePhiOrSecret, sanitizeAutoresearchTopic, isAutoresearchEnabled } from "./scrub.js";
 
 describe("charter", () => {
   it("marks care verticals as PHI-blind", () => {
@@ -86,7 +103,7 @@ describe("ingest + hybrid", () => {
       sensitivity: "internal",
       phiBlind: true,
     });
-    expect(result.pages[0].body).toContain("[REDACTED]");
+    expect(result.pages[0].body).toContain("[REDACTED_SSN]");
     expect(result.pages[0].sensitivity).toBe("phi_ref");
   });
 
@@ -110,5 +127,144 @@ describe("export", () => {
     expect(THINKING_PRINCIPLES).toHaveLength(10);
     expect(renderThinkingSession("Topic", ["goal"])).toContain("Thinking Session");
     expect(injectContradictionCallout("body", "Other", "clash")).toContain("[!contradiction]");
+  });
+});
+
+describe("decision-trace ingest", () => {
+  it("formats stable content hash by trace id", () => {
+    const a = formatDecisionTraceForWiki({
+      id: "11111111-1111-1111-1111-111111111111",
+      entityId: "22222222-2222-2222-2222-222222222222",
+      vertical: "holding",
+      action: "runtime_activation",
+      verdict: "allow",
+      payload: { reason: "ok" },
+      createdAt: "2026-07-12T00:00:00.000Z",
+    });
+    const b = formatDecisionTraceForWiki({
+      id: "11111111-1111-1111-1111-111111111111",
+      entityId: "22222222-2222-2222-2222-222222222222",
+      vertical: "holding",
+      action: "runtime_activation",
+      verdict: "allow",
+      payload: { reason: "changed payload still same hash key" },
+      createdAt: "2026-07-12T00:00:00.000Z",
+    });
+    expect(a.contentHash).toBe(b.contentHash);
+    expect(a.body).toContain("runtime_activation");
+    expect(a.body).toContain("```json");
+    const compiled = compileIngest({
+      title: a.title,
+      body: a.body,
+      sourceKind: "decision_trace",
+      sensitivity: "internal",
+      phiBlind: false,
+      contentHashOverride: a.contentHash,
+    });
+    expect(compiled.contentHash).toBe(a.contentHash);
+    expect(compiled.pages[0].pageType).toBe("decision");
+  });
+});
+
+describe("web research helpers", () => {
+  it("blocks internal and private hosts", () => {
+    expect(isBlockedFetchUrl("http://localhost/x")).toBe(true);
+    expect(isBlockedFetchUrl("https://10.0.0.2/a")).toBe(true);
+    expect(isBlockedFetchUrl("https://example.com/a")).toBe(false);
+  });
+
+  it("ranks and synthesizes autoresearch body", () => {
+    const ranked = rankSearchHits(
+      [
+        { url: "https://a.example/x", title: "Other", snippet: "n/a" },
+        { url: "https://b.example/y", title: "Liquidity pools", snippet: "deep liquidity" },
+      ],
+      "liquidity",
+      2,
+    );
+    expect(ranked[0].title).toContain("Liquidity");
+    const body = synthesizeAutoresearchBody("liquidity", [
+      {
+        round: 1,
+        query: "liquidity",
+        hits: ranked,
+        fetched: [{ url: ranked[0].url, title: ranked[0].title, excerpt: "Deep pools." }],
+      },
+    ]);
+    expect(body).toContain("Autoresearch: liquidity");
+    expect(body).toContain("Deep pools.");
+  });
+});
+
+describe("obsidian sync policy", () => {
+  it("allows only director vault namespaces and safe sensitivity", () => {
+    expect(isDirectorObsidianNamespace("holding/canon")).toBe(true);
+    expect(isDirectorObsidianNamespace("bridges/rareangels__holding")).toBe(true);
+    expect(isDirectorObsidianNamespace("entity/x/working")).toBe(false);
+    expect(isObsidianSyncSafeSensitivity("internal")).toBe(true);
+    expect(isObsidianSyncSafeSensitivity("phi_ref")).toBe(false);
+    expect(isObsidianSyncSafeSensitivity("financial")).toBe(false);
+    const filtered = filterObsidianSyncPages(
+      [
+        { sensitivity: "internal", updatedAt: "2026-07-12T10:00:00.000Z", slug: "a" },
+        { sensitivity: "phi_ref", updatedAt: "2026-07-12T11:00:00.000Z", slug: "b" },
+        { sensitivity: "financial", updatedAt: "2026-07-12T12:00:00.000Z", slug: "c" },
+        { sensitivity: "public", updatedAt: "2026-07-11T00:00:00.000Z", slug: "d" },
+      ],
+      "2026-07-12T00:00:00.000Z",
+    );
+    expect(filtered.map((p) => p.slug)).toEqual(["a"]);
+    expect(buildObsidianSyncToken("holding/canon", filtered)).toHaveLength(32);
+  });
+});
+
+describe("vault package crypto", () => {
+  it("encrypts and decrypts roundtrip with HMAC", () => {
+    const plain = buildVaultPackagePlain({
+      namespace: "holding/canon",
+      pages: [
+        {
+          slug: "hello",
+          title: "Hello",
+          pageType: "concept",
+          body: "# Hello\n\nWorld",
+          sensitivity: "internal",
+        },
+        {
+          slug: "secret",
+          title: "Secret",
+          pageType: "source",
+          body: "nope",
+          sensitivity: "phi_ref",
+        },
+      ],
+    });
+    expect(plain.files).toHaveLength(1);
+    const enc = encryptVaultPackage(plain, "test-passphrase-fortress", "hmac-key");
+    const dec = decryptVaultPackage(enc, "test-passphrase-fortress", "hmac-key");
+    expect(dec.files[0].path).toContain("hello");
+    expect(vaultPackageToTree(dec)["wiki/concept/hello.md"]).toContain("Hello");
+  });
+});
+
+describe("ai bounds", () => {
+  it("denies promote for agents under strict bounds", () => {
+    process.env.WIKI_AGENT_BOUNDS = "strict";
+    expect(classifyWikiPrincipal({ role: "agent", userId: "agent-1" })).toBe("agent");
+    expect(() => assertWikiVerbAllowed("promote", "agent")).toThrow(/denied/);
+    expect(() => assertWikiVerbAllowed("ingest", "agent")).not.toThrow();
+    process.env.WIKI_AGENT_BOUNDS = "off";
+  });
+});
+
+describe("scrub + SSRF helpers", () => {
+  it("detects PHI-like content and blocks private IPs", () => {
+    expect(looksLikePhiOrSecret("Patient SSN 123-45-6789")).toBe(true);
+    const sanitized = sanitizeAutoresearchTopic("api_key=sk-abcdefghijklmnopqrstuvwxyz");
+    expect(sanitized.ok).toBe(false);
+    expect(isBlockedIpAddress("10.0.0.1")).toBe(true);
+    expect(isBlockedIpAddress("8.8.8.8")).toBe(false);
+    process.env.WIKI_AUTORESEARCH_ENABLED = "false";
+    expect(isAutoresearchEnabled()).toBe(false);
   });
 });

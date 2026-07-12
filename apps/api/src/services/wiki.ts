@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseClient } from "@rarecrest/db";
 import type { VerticalKey } from "@rarecrest/contracts";
 import {
@@ -21,10 +21,28 @@ import {
   buildBasesView,
   renderThinkingSession,
   injectContradictionCallout,
+  formatDecisionTraceForWiki,
+  synthesizeAutoresearchBody,
+  rankSearchHits,
+  isBlockedFetchUrl,
+  isDirectorObsidianNamespace,
+  isObsidianSyncSafeSensitivity,
+  filterObsidianSyncPages,
+  buildObsidianSyncToken,
+  toObsidianManifestFiles,
+  looksLikePhiOrSecret,
+  scrubSecretsAndPhi,
+  sanitizeAutoresearchTopic,
+  isAutoresearchEnabled,
+  buildVaultPackagePlain,
+  encryptVaultPackage,
   type WikiSensitivity,
   type WikiPageType,
 } from "@rarecrest/wiki";
 import { VectorStoreClient } from "@rarecrest/vector-store";
+import { createWebSearchFromEnv, type WebSearchProvider } from "./web-search.js";
+import { loadSecret } from "../secrets.js";
+import { createObjectStoreFromEnv } from "@rarecrest/object-store";
 
 export class WikiError extends Error {
   constructor(
@@ -38,12 +56,32 @@ export class WikiError extends Error {
 
 export class WikiService {
   private vectorStore: VectorStoreClient | null = null;
+  private searchProvider: WebSearchProvider;
+  private rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
-  constructor(private db: DatabaseClient) {
+  constructor(
+    private db: DatabaseClient,
+    opts?: { searchProvider?: WebSearchProvider },
+  ) {
     this.vectorStore = new VectorStoreClient({
       url: process.env.VECTOR_STORE_URL ?? "http://localhost:6333",
       collection: process.env.WIKI_VECTOR_COLLECTION ?? "federated-wiki",
     });
+    this.searchProvider = opts?.searchProvider ?? createWebSearchFromEnv();
+  }
+
+  /** Simple per-actor rate limit (fail-closed). */
+  assertRateLimit(key: string, max: number, windowMs: number) {
+    const now = Date.now();
+    const bucket = this.rateBuckets.get(key);
+    if (!bucket || bucket.resetAt <= now) {
+      this.rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      return;
+    }
+    bucket.count += 1;
+    if (bucket.count > max) {
+      throw new WikiError(`Rate limit exceeded for ${key}`, 429);
+    }
   }
 
   resolveNamespace(input: {
@@ -189,13 +227,24 @@ export class WikiService {
     sensitivity?: WikiSensitivity;
     actorId: string;
     html?: string;
+    contentHashOverride?: string;
+    skipIfHashExists?: boolean;
   }) {
     const charter = this.charter(input.vertical);
     let body = input.body;
     if (input.html) body = defuddleHtml(input.html);
-    if (charter.phiBlind && /ssn|phi|patient\s+name/i.test(body) && input.sensitivity !== "phi_ref") {
-      // Force phi_ref path for care verticals when PHI-ish content detected
+
+    if (charter.phiBlind && looksLikePhiOrSecret(body)) {
+      const hasBlindRef = /vault:|phi_envelope:|\[PHI_REF\]|\[REDACTED/i.test(body);
+      if (!hasBlindRef) {
+        throw new WikiError(
+          "Care charter refuses plaintext PHI/secrets — encrypt via PHI vault and ingest blind refs only",
+          422,
+        );
+      }
     }
+    body = scrubSecretsAndPhi(body).text;
+
     const sensitivity = (input.sensitivity ?? (charter.phiBlind ? "phi_ref" : "internal")) as WikiSensitivity;
     const compiled = compileIngest({
       title: input.title,
@@ -203,7 +252,25 @@ export class WikiService {
       sourceKind: input.sourceKind,
       sensitivity,
       phiBlind: charter.phiBlind,
+      contentHashOverride: input.contentHashOverride,
     });
+
+    if (input.skipIfHashExists) {
+      const existing = await this.db.query(
+        `SELECT id FROM rarecrest.wiki_raw_sources WHERE namespace = $1 AND content_hash = $2`,
+        [input.namespace, compiled.contentHash],
+      );
+      if (existing.rows.length > 0) {
+        return {
+          skipped: true as const,
+          jobId: null,
+          rawSourceId: existing.rows[0].id,
+          pagesTouched: 0,
+          pages: [],
+          summary: `Skipped duplicate raw source ${compiled.contentHash.slice(0, 12)}`,
+        };
+      }
+    }
 
     const raw = await this.db.query(
       `INSERT INTO rarecrest.wiki_raw_sources
@@ -266,12 +333,101 @@ export class WikiService {
     );
 
     return {
+      skipped: false as const,
       jobId: job.rows[0].id,
       rawSourceId: raw.rows[0].id,
       pagesTouched: touched.length,
       pages: touched,
       summary: compiled.summary,
     };
+  }
+
+  /**
+   * Pull append-only decision_traces into wiki_raw_sources (source_kind=decision_trace).
+   * Idempotent via content_hash = sha256(decision-trace:{id}).
+   */
+  async ingestDecisionTraces(input: {
+    namespace: string;
+    vertical: VerticalKey;
+    entityId: string;
+    actorId: string;
+    since?: string;
+    traceIds?: string[];
+    limit?: number;
+  }) {
+    const limit = Math.min(input.limit ?? 100, 500);
+    let rows: Array<Record<string, unknown>>;
+    if (input.traceIds && input.traceIds.length > 0) {
+      const result = await this.db.query(
+        `SELECT id, entity_id AS "entityId", vertical, action, verdict, payload,
+                retention_regime AS "retentionRegime", created_at AS "createdAt"
+         FROM rarecrest.decision_traces
+         WHERE id = ANY($1::uuid[]) AND ($2::uuid IS NULL OR entity_id = $2)
+         ORDER BY created_at ASC
+         LIMIT $3`,
+        [input.traceIds, input.entityId, limit],
+      );
+      rows = result.rows;
+    } else {
+      const result = await this.db.query(
+        `SELECT id, entity_id AS "entityId", vertical, action, verdict, payload,
+                retention_regime AS "retentionRegime", created_at AS "createdAt"
+         FROM rarecrest.decision_traces
+         WHERE entity_id = $1
+           AND ($2::timestamptz IS NULL OR created_at > $2::timestamptz)
+         ORDER BY created_at ASC
+         LIMIT $3`,
+        [input.entityId, input.since ?? null, limit],
+      );
+      rows = result.rows;
+    }
+
+    let ingested = 0;
+    let skipped = 0;
+    const jobIds: string[] = [];
+    const details: Array<{ traceId: string; status: string }> = [];
+
+    for (const row of rows) {
+      const formatted = formatDecisionTraceForWiki({
+        id: row.id as string,
+        entityId: (row.entityId as string | null) ?? null,
+        vertical: row.vertical as string,
+        action: row.action as string,
+        verdict: row.verdict as "allow" | "deny",
+        payload: (row.payload as Record<string, unknown>) ?? {},
+        retentionRegime: row.retentionRegime as string | undefined,
+        createdAt: new Date(row.createdAt as string).toISOString(),
+      });
+      const result = await this.ingest({
+        namespace: input.namespace,
+        vertical: input.vertical,
+        entityId: input.entityId,
+        title: formatted.title,
+        body: formatted.body,
+        sourceKind: "decision_trace",
+        actorId: input.actorId,
+        contentHashOverride: formatted.contentHash,
+        skipIfHashExists: true,
+      });
+      if (result.skipped) {
+        skipped += 1;
+        details.push({ traceId: row.id as string, status: "skipped" });
+      } else {
+        ingested += 1;
+        if (result.jobId) jobIds.push(result.jobId as string);
+        details.push({ traceId: row.id as string, status: "ingested" });
+      }
+    }
+
+    await this.appendLog(
+      input.namespace,
+      input.vertical,
+      "ingest_decision_traces",
+      `ingested=${ingested} skipped=${skipped} entity=${input.entityId}`,
+      input.actorId,
+    );
+
+    return { ingested, skipped, scanned: rows.length, jobIds, details };
   }
 
   async rebuildIndex(namespace: string, vertical: VerticalKey, actorId: string) {
@@ -357,18 +513,34 @@ export class WikiService {
     return result.rows[0] ?? null;
   }
 
-  async query(namespace: string, question: string, fileAnswer = false, actorId = "system") {
+  async query(
+    namespace: string,
+    question: string,
+    fileAnswer = false,
+    actorId = "system",
+    opts?: { redactSensitive?: boolean },
+  ) {
+    this.assertRateLimit(`query:${actorId}`, 60, 60_000);
+    const redact = opts?.redactSensitive === true;
     const hot = await this.db.query(`SELECT body FROM rarecrest.wiki_hot_cache WHERE namespace = $1`, [namespace]);
     const pages = await this.db.query(
-      `SELECT id, slug, title, body FROM rarecrest.wiki_pages WHERE namespace = $1 AND page_type NOT IN ('log')`,
+      `SELECT id, slug, title, body, sensitivity
+       FROM rarecrest.wiki_pages
+       WHERE namespace = $1 AND page_type NOT IN ('log')`,
       [namespace],
     );
+    const visiblePages = redact
+      ? pages.rows.filter((p) => {
+          const s = String(p.sensitivity ?? "internal");
+          return s !== "phi_ref" && s !== "financial";
+        })
+      : pages.rows;
     const links = await this.db.query(
       `SELECT from_page_id AS "fromId", to_slug AS "toSlug", to_page_id AS "toId"
        FROM rarecrest.wiki_links WHERE namespace = $1`,
       [namespace],
     );
-    const nodes = pages.rows.map((p) => ({
+    const nodes = visiblePages.map((p) => ({
       id: p.id as string,
       slug: p.slug as string,
       title: p.title as string,
@@ -383,11 +555,17 @@ export class WikiService {
     const vectorScore = new Map<string, number>();
     if (this.vectorStore) {
       try {
-        const healthy = await this.vectorStore.healthCheck();
+        const healthy = await Promise.race([
+          this.vectorStore.healthCheck(),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 800)),
+        ]);
         if (healthy) {
-          const hits = await this.vectorStore.search(bagEmbedding(question), 12);
+          const hits = await Promise.race([
+            this.vectorStore.search(bagEmbedding(question), 12),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("vector timeout")), 1200)),
+          ]);
           for (const hit of hits) {
-            if (hit.payload?.namespace === namespace || !hit.payload?.namespace) {
+            if (hit.payload?.namespace === namespace) {
               vectorScore.set(hit.id, hit.score);
             }
           }
@@ -398,7 +576,7 @@ export class WikiService {
     }
     const hybrid = hybridRank(
       question,
-      pages.rows.map((p) => ({
+      visiblePages.map((p) => ({
         id: p.id as string,
         slug: p.slug as string,
         title: p.title as string,
@@ -421,7 +599,7 @@ export class WikiService {
       `Based on ${hybrid.length} wiki pages (PageRank + lexical${vectorScore.size ? " + vector" : ""} hybrid).`,
       ``,
       ...hybrid.map((h, i) => {
-        const page = pages.rows.find((p) => p.id === h.id);
+        const page = visiblePages.find((p) => p.id === h.id);
         const excerpt = String(page?.body ?? "").slice(0, 280).replace(/\n+/g, " ");
         return `${i + 1}. [[${h.title}]] (score ${h.score.toFixed(3)}): ${excerpt}…`;
       }),
@@ -592,25 +770,423 @@ export class WikiService {
     actorId: string;
     rounds?: number;
   }) {
-    const charter = this.charter(input.vertical);
-    if (!charter.allowAutoresearch) throw new WikiError("Autoresearch disabled for this charter", 403);
-    const rounds = input.rounds ?? 3;
-    const notes: string[] = [];
-    for (let r = 1; r <= rounds; r++) {
-      notes.push(
-        `Round ${r}: researched '${input.topic}' — gap-fill placeholder (wire live web search in production).`,
+    if (!isAutoresearchEnabled()) {
+      throw new WikiError(
+        "Autoresearch disabled (set WIKI_AUTORESEARCH_ENABLED=true to allow director-gated live search)",
+        403,
       );
     }
-    const body = `# Autoresearch: ${input.topic}\n\n${notes.map((n) => `- ${n}`).join("\n")}\n\n## Open gaps\n\n- Validate sources with human review\n`;
-    return this.ingest({
+    const topicCheck = sanitizeAutoresearchTopic(input.topic);
+    if (!topicCheck.ok) throw new WikiError(`Autoresearch topic rejected: ${topicCheck.reason}`, 400);
+
+    const charter = this.charter(input.vertical);
+    if (!charter.allowAutoresearch) throw new WikiError("Autoresearch disabled for this charter", 403);
+    this.assertRateLimit(`autoresearch:${input.actorId}`, 5, 60_000);
+
+    const rounds = input.rounds ?? 3;
+    const researchRounds: Array<{
+      round: number;
+      query: string;
+      hits: Array<{ url: string; title: string; snippet: string }>;
+      fetched: Array<{ url: string; title: string; excerpt: string; blocked?: boolean; error?: string }>;
+    }> = [];
+
+    for (let r = 1; r <= rounds; r++) {
+      const query =
+        r === 1
+          ? topicCheck.topic
+          : `${topicCheck.topic} ${["overview", "risks", "recent developments"][r - 2] ?? `depth ${r}`}`;
+      let hits: Array<{ url: string; title: string; snippet: string }> = [];
+      try {
+        hits = rankSearchHits(await this.searchProvider.search(query, { limit: 5 }), query, 5);
+      } catch (err) {
+        researchRounds.push({
+          round: r,
+          query,
+          hits: [],
+          fetched: [
+            {
+              url: "",
+              title: "search_error",
+              excerpt: "",
+              error: err instanceof Error ? err.message : "search failed",
+            },
+          ],
+        });
+        continue;
+      }
+
+      const fetched: Array<{ url: string; title: string; excerpt: string; blocked?: boolean; error?: string }> = [];
+      for (const hit of hits.slice(0, 3)) {
+        if (isBlockedFetchUrl(hit.url)) {
+          fetched.push({ url: hit.url, title: hit.title, excerpt: "", blocked: true, error: "blocked_host" });
+          continue;
+        }
+        try {
+          const page = await this.searchProvider.fetchPage(hit.url, { maxBytes: 120_000 });
+          const md = defuddleHtml(page.html);
+          fetched.push({
+            url: page.finalUrl,
+            title: hit.title,
+            excerpt: md.slice(0, 800),
+          });
+          await this.ingest({
+            namespace: input.namespace,
+            vertical: input.vertical,
+            title: `Web: ${hit.title}`.slice(0, 200),
+            body: md.slice(0, 12_000),
+            sourceKind: "web",
+            sensitivity: charter.phiBlind ? "phi_ref" : "internal",
+            actorId: input.actorId,
+            skipIfHashExists: true,
+          });
+        } catch (err) {
+          fetched.push({
+            url: hit.url,
+            title: hit.title,
+            excerpt: "",
+            error: err instanceof Error ? err.message : "fetch failed",
+          });
+        }
+      }
+      researchRounds.push({ round: r, query, hits, fetched });
+    }
+
+    const body = synthesizeAutoresearchBody(topicCheck.topic, researchRounds);
+    const result = await this.ingest({
       namespace: input.namespace,
       vertical: input.vertical,
-      title: `Autoresearch: ${input.topic}`,
+      title: `Autoresearch: ${topicCheck.topic}`,
       body,
       sourceKind: "autoresearch",
       sensitivity: "internal",
       actorId: input.actorId,
     });
+    await this.appendLog(
+      input.namespace,
+      input.vertical,
+      "autoresearch",
+      `provider=${this.searchProvider.name} topic=${topicCheck.topic} rounds=${rounds}`,
+      input.actorId,
+    );
+    return {
+      ...result,
+      provider: this.searchProvider.name,
+      rounds: researchRounds.map((r) => ({
+        round: r.round,
+        query: r.query,
+        hitCount: r.hits.length,
+        fetchedCount: r.fetched.filter((f) => !f.blocked && !f.error).length,
+      })),
+    };
+  }
+
+  async buildObsidianSyncManifest(input: {
+    namespace: string;
+    vertical: VerticalKey;
+    actorId: string;
+    since?: string;
+    includeBodies?: boolean;
+  }) {
+    if (!isDirectorObsidianNamespace(input.namespace)) {
+      throw new WikiError(
+        "Namespace not eligible for director Obsidian sync (allowed: holding/canon, bridges/*)",
+        403,
+      );
+    }
+    if (input.includeBodies) {
+      throw new WikiError(
+        "Plaintext body sync disabled — use POST /api/v1/wiki/obsidian/vault-package for encrypted packages",
+        403,
+      );
+    }
+    const pages = await this.listPages(input.namespace);
+    const safe = filterObsidianSyncPages(
+      pages.map((p) => ({
+        ...p,
+        sensitivity: String(p.sensitivity),
+        updatedAt: String(p.updatedAt),
+        slug: String(p.slug),
+        title: String(p.title),
+        pageType: String(p.pageType),
+        status: String(p.status),
+        version: Number(p.version ?? 1),
+        id: String(p.id),
+      })),
+      input.since,
+    );
+
+    const files = toObsidianManifestFiles(safe);
+    const syncToken = buildObsidianSyncToken(input.namespace, safe);
+
+    await this.appendLog(
+      input.namespace,
+      input.vertical,
+      "obsidian_sync_manifest",
+      `files=${files.length} since=${input.since ?? "all"} token=${syncToken} metadata_only=true`,
+      input.actorId,
+    );
+
+    try {
+      await this.db.query(
+        `INSERT INTO rarecrest.director_sessions (director_id, last_engaged_at) VALUES ($1, NOW())`,
+        [input.actorId],
+      );
+    } catch {
+      // optional
+    }
+
+    return {
+      namespace: input.namespace,
+      format: "obsidian-markdown-manifest" as const,
+      syncToken,
+      since: input.since ?? null,
+      generatedAt: new Date().toISOString(),
+      files,
+      exclusions: ["phi_ref", "financial", "non-director-namespaces", "plaintext_bodies"],
+      note: "Metadata only. Build encrypted vault packages via POST /api/v1/wiki/obsidian/vault-package.",
+    };
+  }
+
+  async createVaultPackage(input: {
+    namespace: string;
+    vertical: VerticalKey;
+    actorId: string;
+    passphrase?: string;
+    skipRateLimit?: boolean;
+  }) {
+    if (!isDirectorObsidianNamespace(input.namespace)) {
+      throw new WikiError("Namespace not eligible for vault package", 403);
+    }
+    if (!input.skipRateLimit) {
+      this.assertRateLimit(`vault-package:${input.actorId}`, 10, 60_000);
+    }
+
+    const kek = input.passphrase || loadSecret("WIKI_VAULT_PACKAGE_KEK");
+    const hmacKey = loadSecret("WIKI_VAULT_PACKAGE_HMAC") || kek;
+    if (!kek) {
+      throw new WikiError("WIKI_VAULT_PACKAGE_KEK (or passphrase) required to encrypt vault packages", 500);
+    }
+
+    const pages = await this.listPages(input.namespace);
+    const fullPages = [];
+    for (const p of pages) {
+      if (!isObsidianSyncSafeSensitivity(String(p.sensitivity))) continue;
+      const bodyPage = await this.getPage(input.namespace, String(p.slug));
+      if (!bodyPage) continue;
+      fullPages.push({
+        slug: String(p.slug),
+        title: String(p.title),
+        pageType: String(p.pageType),
+        body: String(bodyPage.body),
+        sensitivity: String(p.sensitivity),
+      });
+    }
+
+    const canvas = await this.exportCanvas(input.namespace);
+    const basesYaml = await this.exportBases(input.namespace);
+    const plain = buildVaultPackagePlain({
+      namespace: input.namespace,
+      pages: fullPages,
+      canvas,
+      basesYaml,
+    });
+    const encrypted = encryptVaultPackage(plain, kek, hmacKey!);
+    const downloadToken = randomBytes(24).toString("hex");
+    const tokenHash = createHash("sha256").update(downloadToken).digest("hex");
+    const objectKey = `wiki-vault/${input.actorId}/${encrypted.contentSha256.slice(0, 16)}.rcvault`;
+    const ciphertextBuf = Buffer.from(JSON.stringify(encrypted), "utf8");
+
+    try {
+      const store = createObjectStoreFromEnv();
+      await store.putObject(objectKey, ciphertextBuf, "application/vnd.rarecrest.rcvault+json");
+    } catch {
+      // object store optional
+    }
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    let packageId: string | null = null;
+    try {
+      const row = await this.db.query(
+        `INSERT INTO rarecrest.wiki_vault_packages
+           (namespace, vertical, actor_id, content_sha256, object_key, file_count, download_token_hash, expires_at, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ready')
+         RETURNING id`,
+        [
+          input.namespace,
+          input.vertical,
+          input.actorId,
+          encrypted.contentSha256,
+          objectKey,
+          encrypted.fileCount,
+          tokenHash,
+          expiresAt,
+        ],
+      );
+      packageId = (row.rows[0]?.id as string) ?? null;
+    } catch {
+      // migration may be pending in tests
+    }
+
+    await this.appendLog(
+      input.namespace,
+      input.vertical,
+      "vault_package",
+      `sha=${encrypted.contentSha256} files=${encrypted.fileCount}`,
+      input.actorId,
+    );
+
+    return {
+      packageId,
+      namespace: input.namespace,
+      contentSha256: encrypted.contentSha256,
+      fileCount: encrypted.fileCount,
+      objectKey,
+      downloadToken,
+      expiresAt,
+      package: encrypted,
+      note: "Decrypt offline: rarecrest-wiki vault-decrypt <file.rcvault> --out ./Vault",
+    };
+  }
+
+  /**
+   * Enqueue vault package build. Small namespaces run inline; large ones process async.
+   * Poll via getVaultPackageJob(jobId).
+   */
+  async enqueueVaultPackage(input: {
+    namespace: string;
+    vertical: VerticalKey;
+    actorId: string;
+    passphrase?: string;
+    asyncThreshold?: number;
+  }) {
+    if (!isDirectorObsidianNamespace(input.namespace)) {
+      throw new WikiError("Namespace not eligible for vault package", 403);
+    }
+    this.assertRateLimit(`vault-package:${input.actorId}`, 10, 60_000);
+    const threshold = input.asyncThreshold ?? 25;
+    const pages = await this.listPages(input.namespace);
+    const eligible = pages.filter((p) => isObsidianSyncSafeSensitivity(String(p.sensitivity)));
+
+    let jobId: string | null = null;
+    try {
+      const row = await this.db.query(
+        `INSERT INTO rarecrest.wiki_vault_package_jobs
+           (namespace, vertical, actor_id, status)
+         VALUES ($1,$2,$3,'pending')
+         RETURNING id`,
+        [input.namespace, input.vertical, input.actorId],
+      );
+      jobId = (row.rows[0]?.id as string) ?? null;
+    } catch {
+      // migration may be pending — fall through to sync
+    }
+
+    const run = async () => {
+      if (jobId) {
+        try {
+          await this.db.query(
+            `UPDATE rarecrest.wiki_vault_package_jobs SET status='running', updated_at=NOW() WHERE id=$1`,
+            [jobId],
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        const result = await this.createVaultPackage({
+          namespace: input.namespace,
+          vertical: input.vertical,
+          actorId: input.actorId,
+          passphrase: input.passphrase,
+          skipRateLimit: true,
+        });
+        if (jobId) {
+          try {
+            await this.db.query(
+              `UPDATE rarecrest.wiki_vault_package_jobs
+               SET status='ready', package_id=$2, result_json=$3::jsonb, updated_at=NOW()
+               WHERE id=$1`,
+              [
+                jobId,
+                result.packageId,
+                JSON.stringify({
+                  packageId: result.packageId,
+                  contentSha256: result.contentSha256,
+                  fileCount: result.fileCount,
+                  objectKey: result.objectKey,
+                  downloadToken: result.downloadToken,
+                  expiresAt: result.expiresAt,
+                  package: result.package,
+                  note: result.note,
+                }),
+              ],
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+        return result;
+      } catch (err) {
+        if (jobId) {
+          try {
+            await this.db.query(
+              `UPDATE rarecrest.wiki_vault_package_jobs
+               SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`,
+              [jobId, err instanceof Error ? err.message : String(err)],
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+        throw err;
+      }
+    };
+
+    if (eligible.length <= threshold || !jobId) {
+      const result = await run();
+      return { jobId, status: "ready" as const, ...result };
+    }
+
+    // Fire-and-forget for large namespaces
+    void run().catch(() => undefined);
+    return {
+      jobId,
+      status: "pending" as const,
+      namespace: input.namespace,
+      note: `Large namespace (${eligible.length} pages). Poll GET /api/v1/wiki/obsidian/vault-package/jobs/${jobId}`,
+    };
+  }
+
+  async getVaultPackageJob(jobId: string, actorId: string) {
+    const row = await this.db.query(
+      `SELECT id, namespace, vertical, actor_id AS "actorId", status, package_id AS "packageId",
+              error, result_json AS "result", created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM rarecrest.wiki_vault_package_jobs WHERE id = $1`,
+      [jobId],
+    );
+    const job = row.rows[0];
+    if (!job) throw new WikiError("Vault package job not found", 404);
+    if (String(job.actorId) !== actorId) {
+      throw new WikiError("Vault package job access denied", 403);
+    }
+    return job;
+  }
+
+  filterPageForCaller(
+    page: Record<string, unknown> | null,
+    opts: { isDirector: boolean; isAgent: boolean },
+  ): Record<string, unknown> | null {
+    if (!page) return null;
+    const sensitivity = String(page.sensitivity ?? "internal");
+    if (opts.isAgent && (sensitivity === "phi_ref" || sensitivity === "financial")) {
+      return {
+        ...page,
+        body: `_redacted — ${sensitivity} content unavailable to agents_`,
+        frontmatter: { ...(page.frontmatter as object), redacted: true },
+      };
+    }
+    return page;
   }
 
   async exportCanvas(namespace: string) {

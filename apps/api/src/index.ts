@@ -40,7 +40,9 @@ import { registerAuthRevocationRoutes } from "./routes/auth-revocation-routes.js
 import { registerWikiRoutes } from "./routes/wiki-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { mapEntityRow } from "./services/portfolio.js";
+import { assertPrivateDeploymentOrDie, corsOriginOption } from "./fortress.js";
 import { loadSecret } from "./secrets.js";
+import { pathToFileURL } from "node:url";
 import { z } from "zod";
 
 const PORT = Number(process.env.API_PORT ?? 3000);
@@ -65,7 +67,7 @@ export async function buildApp() {
     internalServiceToken,
   });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, { origin: corsOriginOption(HOST) });
 
   app.addHook("preHandler", async (request) => {
     if (request.url === "/health") return;
@@ -177,12 +179,16 @@ export async function buildApp() {
 }
 
 async function main() {
+  assertPrivateDeploymentOrDie(HOST);
   const { app } = await buildApp();
   await app.listen({ port: PORT, host: HOST });
-  console.log(`API Server listening on ${HOST}:${PORT}`);
+  console.log(`API Server listening on ${HOST}:${PORT} (fortress posture active)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
+const isDirectRun =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);

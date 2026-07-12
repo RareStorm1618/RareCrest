@@ -1,57 +1,71 @@
-# RareCrest Federated Canon Wiki
+# RareCrest Federated Canon Wiki (Private Canon Fortress)
 
-Operate RareCrest's Knowledge OS (Plan A): one wiki engine, vertical namespaces, RareCrest as system of record. Obsidian is an optional director IDE via sync manifest.
+Operate RareCrest's Knowledge OS: one wiki engine, vertical namespaces, RareCrest as system of record.
+Obsidian is an **offline encrypted satellite** (signed vault packages) — not a live plaintext sync target.
 
 ## When to use
 
 - Ingesting documents / web clips into a namespace
 - Querying with wikilink citations
-- Linting, doctor health, promote-to-canon
-- Autoresearch, thinking sessions, Canvas/Bases export
-- Creating holding bridge projections
+- Linting, doctor health, promote-to-canon (humans/directors)
+- Autoresearch (director + `WIKI_AUTORESEARCH_ENABLED=true` only)
+- Encrypted Obsidian vault packages for directors
+- Creating holding bridge projections (verified director)
 
 ## Namespace model
 
 | Namespace | Access |
 | --- | --- |
-| `holding/canon` | Directors / holding |
+| `holding/canon` | Verified director |
 | `vertical/{key}/wiki` | That vertical only |
-| `entity/{id}/working` | Entity-scoped auth |
-| `bridges/{from}__{to}` | Holding-only redacted |
+| `entity/{id}/working` | Entity-scoped auth (`assertEntityAccess` on every read/write) |
+| `bridges/{from}__{to}` | Verified director only |
 
 ## Core API
 
 Base: `/api/v1/wiki`
 
 1. `POST /namespace` — resolve namespace + charter
-2. `POST /ingest` — immutable raw → compiled pages (Defuddle via `html`)
-3. `POST /query` — hot cache + PageRank + hybrid BM25 → cited answer
-4. `POST /lint` — 8-category lint report
-5. `GET /doctor` — namespace health
-6. `POST /promote` — dual-control when holding/financial
-7. `POST /contradictions` — flag + inject callouts
-8. `POST /lock` / `POST /unlock` — multi-writer advisory locks
-9. `POST /autoresearch` — bounded gap-fill research → ingest
-10. `POST /think` — 10-principle thinking session page
-11. `GET /export/canvas` / `GET /export/bases` — Obsidian-oriented exports
-12. `POST /bridges` — holding redacted bridge page
-13. `POST /obsidian/sync-manifest` — non-PHI file list for director vault sync
+2. `POST /ingest` — immutable raw → compiled pages (PHI reject on care charters without vault ref)
+2b. `POST /ingest/decision-traces` — humans only; redacted allowlist payload
+3. `POST /query` — hybrid answer; agents never see `phi_ref` / `financial` bodies
+4. `POST /lint` / `GET /doctor` / `POST /lock`
+5. `POST /promote` — humans/directors; dual-control when holding/financial
+6. `POST /autoresearch` — **OFF by default**; director + enable flag + explicit `WEB_SEARCH_PROVIDER`
+7. `POST /think` — humans/directors
+8. `GET /export/canvas` / `GET /export/bases` — metadata exports
+9. `POST /bridges` — verified director
+10. `POST /obsidian/sync-manifest` — metadata only (`includeBodies` forbidden)
+11. `POST /obsidian/vault-package` — encrypted signed package; large namespaces return `202` + job id
+12. `GET /obsidian/vault-package/jobs/:jobId` — poll async package builds
 
 ## CLI
 
 ```bash
 pnpm --filter @rarecrest/wiki exec rarecrest-wiki doctor
 pnpm --filter @rarecrest/wiki exec rarecrest-wiki lint < pages.json
-pnpm --filter @rarecrest/wiki exec rarecrest-wiki graph < graph.json
+pnpm --filter @rarecrest/wiki exec rarecrest-wiki vault-decrypt package.rcvault --out ./ObsidianVault
+```
+
+## Fortress env (required for LAN/VPN)
+
+```
+AUTH_TRUST_MODE=strict          # required when API_HOST is not loopback
+CORS_ALLOWED_ORIGINS=https://...
+WIKI_AGENT_BOUNDS=strict
+WIKI_AUTORESEARCH_ENABLED=false
+WIKI_VAULT_PACKAGE_KEK=...
+WIKI_VAULT_PACKAGE_HMAC=...
 ```
 
 ## Trust rules (non-negotiable)
 
+- RareCrest is SoR; Obsidian is offline encrypted satellite; public research is opt-in and director-gated
 - Never embed PHI plaintext; care charters are PHI-blind
 - Financial / holding canon promotion needs two distinct humans
 - Do not cross vertical namespaces without director/holding authority
-- Agents draft; humans promote
+- Agents draft/query/lint only — no promote, autoresearch, vault package, bridges
 
 ## Companion UI
 
-Director web: `#/entities/{id}/wiki` — Wiki Companion (list, query with `[[citations]]`, ingest, lint, doctor).
+Director web: `#/entities/{id}/wiki` — Wiki Companion (query, ingest, promote, vault package, sync traces).

@@ -1,35 +1,66 @@
 import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
 import type { VerticalKey } from "@rarecrest/contracts";
-import { VERTICAL_CHARTERS } from "@rarecrest/wiki";
+import {
+  VERTICAL_CHARTERS,
+  classifyWikiPrincipal,
+  assertWikiVerbAllowed,
+  type WikiVerb,
+} from "@rarecrest/wiki";
 import { z } from "zod";
 import { formatZodErrors, verticalSchema } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { isVerifiedDirector } from "../trust.js";
 import { WikiError, WikiService } from "../services/wiki.js";
 
-function assertNamespaceAccess(
+const ENTITY_NS = /^entity\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/working$/i;
+
+async function assertWikiAccess(
+  db: DatabaseClient,
   auth: { vertical: VerticalKey; userId: string; role?: string; authMethod: string },
   headers: Record<string, unknown>,
   namespace: string,
   vertical: VerticalKey,
 ) {
   if (namespace.startsWith("holding/") || namespace.startsWith("bridges/")) {
-    if (!isVerifiedDirector(auth as never, headers) && auth.vertical !== "holding") {
-      throw new WikiError("Holding/bridge namespaces require director or holding vertical", 403);
+    if (!isVerifiedDirector(auth as never, headers)) {
+      throw new WikiError("Holding/bridge namespaces require verified director", 403);
     }
-    return;
-  }
-  if (namespace.startsWith("vertical/")) {
+  } else if (namespace.startsWith("vertical/")) {
     const v = namespace.split("/")[1] as VerticalKey;
     if (auth.vertical !== v && !isVerifiedDirector(auth as never, headers)) {
       throw new WikiError("Cross-vertical wiki access denied", 403);
     }
-    return;
-  }
-  if (auth.vertical !== vertical && !isVerifiedDirector(auth as never, headers)) {
+  } else if (auth.vertical !== vertical && !isVerifiedDirector(auth as never, headers)) {
     throw new WikiError("Namespace vertical mismatch", 403);
   }
+
+  const entityMatch = ENTITY_NS.exec(namespace);
+  if (entityMatch) {
+    await assertEntityAccess(db, entityMatch[1], auth as never);
+  }
+}
+
+function enforceVerb(
+  verb: WikiVerb,
+  auth: { role?: string; userId: string; authMethod: string },
+  headers: Record<string, unknown>,
+) {
+  const principal = classifyWikiPrincipal(auth);
+  const verifiedDirector = isVerifiedDirector(auth as never, headers);
+  try {
+    assertWikiVerbAllowed(verb, principal, { verifiedDirector });
+  } catch (err) {
+    const e = err as { message?: string; statusCode?: number };
+    throw new WikiError(e.message ?? "Wiki verb denied", e.statusCode ?? 403);
+  }
+}
+
+function mapWikiErr(err: unknown, reply: { status: (n: number) => { send: (b: unknown) => unknown } }) {
+  if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+  if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+  if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
+  throw err;
 }
 
 export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
@@ -50,13 +81,10 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       const body = schema.parse(request.body);
       if (body.entityId) await assertEntityAccess(db, body.entityId, request.auth);
       const namespace = wiki.resolveNamespace(body);
-      assertNamespaceAccess(request.auth, request.headers as never, namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, namespace, body.vertical);
       return reply.send({ namespace, charter: wiki.charter(body.vertical) });
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -70,14 +98,15 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       html: z.string().optional(),
       sourceKind: z.enum(["document", "web", "decision_trace", "structured_doc", "autoresearch", "export"]).default("document"),
       sensitivity: z.enum(["public", "internal", "phi_ref", "financial"]).optional(),
-      fileAnswer: z.boolean().optional(),
     });
     try {
+      enforceVerb("ingest", request.auth, request.headers as never);
       const body = schema.parse(request.body);
       if (!body.body && !body.html) return reply.status(400).send({ message: "body or html required" });
       if (body.entityId) await assertEntityAccess(db, body.entityId, request.auth);
       const namespace = wiki.resolveNamespace(body);
-      assertNamespaceAccess(request.auth, request.headers as never, namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, namespace, body.vertical);
+      wiki.assertRateLimit(`ingest:${request.auth.userId}`, 120, 60_000);
       const result = await wiki.ingest({
         namespace,
         vertical: body.vertical,
@@ -91,10 +120,7 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       });
       return reply.status(201).send({ namespace, ...result });
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -102,7 +128,7 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
     const q = request.query as { namespace?: string; pageType?: string; vertical?: string };
     if (!q.namespace || !q.vertical) return reply.status(400).send({ message: "namespace and vertical required" });
     try {
-      assertNamespaceAccess(request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
+      await assertWikiAccess(db, request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
       const pages = await wiki.listPages(q.namespace, q.pageType);
       return reply.send({ namespace: q.namespace, pages });
     } catch (err) {
@@ -116,13 +142,18 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
     const q = request.query as { namespace?: string; vertical?: string };
     if (!q.namespace || !q.vertical) return reply.status(400).send({ message: "namespace and vertical required" });
     try {
-      assertNamespaceAccess(request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
+      enforceVerb("query", request.auth, request.headers as never);
+      await assertWikiAccess(db, request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
       const page = await wiki.getPage(q.namespace, slug);
       if (!page) return reply.status(404).send({ message: "Page not found" });
-      return reply.send(page);
+      const principal = classifyWikiPrincipal(request.auth);
+      const filtered = wiki.filterPageForCaller(page as Record<string, unknown>, {
+        isDirector: isVerifiedDirector(request.auth, request.headers as never),
+        isAgent: principal === "agent",
+      });
+      return reply.send(filtered);
     } catch (err) {
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -134,27 +165,28 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       fileAnswer: z.boolean().default(true),
     });
     try {
+      enforceVerb("query", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      assertNamespaceAccess(request.auth, request.headers as never, body.namespace, body.vertical);
-      const result = await wiki.query(body.namespace, body.question, body.fileAnswer, request.auth.userId);
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
+      const principal = classifyWikiPrincipal(request.auth);
+      const result = await wiki.query(body.namespace, body.question, body.fileAnswer, request.auth.userId, {
+        redactSensitive: principal === "agent",
+      });
       return reply.send(result);
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
   app.post("/api/v1/wiki/lint", async (request, reply) => {
     const schema = z.object({ namespace: z.string().min(1), vertical: verticalSchema });
     try {
+      enforceVerb("lint", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      assertNamespaceAccess(request.auth, request.headers as never, body.namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
       return reply.send(await wiki.lint(body.namespace, body.vertical, request.auth.userId));
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -162,11 +194,11 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
     const q = request.query as { namespace?: string; vertical?: string };
     if (!q.namespace || !q.vertical) return reply.status(400).send({ message: "namespace and vertical required" });
     try {
-      assertNamespaceAccess(request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
+      enforceVerb("doctor", request.auth, request.headers as never);
+      await assertWikiAccess(db, request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
       return reply.send(await wiki.doctor(q.namespace));
     } catch (err) {
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -178,15 +210,14 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       ttlSeconds: z.number().int().min(30).max(600).optional(),
     });
     try {
+      enforceVerb("lock", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      assertNamespaceAccess(request.auth, request.headers as never, body.namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
       const ok = await wiki.acquireLock(body.namespace, body.slug, request.auth.userId, body.ttlSeconds);
       if (!ok) return reply.status(409).send({ message: "Page locked by another writer" });
       return reply.send({ locked: true, slug: body.slug, holder: request.auth.userId });
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -197,14 +228,13 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       slug: z.string().min(1),
     });
     try {
+      enforceVerb("lock", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      assertNamespaceAccess(request.auth, request.headers as never, body.namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
       await wiki.releaseLock(body.namespace, body.slug, request.auth.userId);
       return reply.send({ locked: false, slug: body.slug });
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -218,15 +248,14 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       claimB: z.string().min(1),
     });
     try {
+      enforceVerb("contradictions", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      assertNamespaceAccess(request.auth, request.headers as never, body.namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
       return reply.status(201).send(
         await wiki.flagContradictions(body.namespace, body.pageASlug, body.pageBSlug, body.claimA, body.claimB),
       );
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -238,8 +267,9 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       reason: z.string().min(1),
     });
     try {
+      enforceVerb("promote", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      assertNamespaceAccess(request.auth, request.headers as never, body.namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
       const charter = wiki.charter(body.vertical);
       const result = await wiki.promote({
         namespace: body.namespace,
@@ -250,9 +280,41 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       });
       return reply.send(result);
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
+    }
+  });
+
+  app.post("/api/v1/wiki/ingest/decision-traces", async (request, reply) => {
+    const schema = z.object({
+      vertical: verticalSchema,
+      entityId: z.string().uuid(),
+      since: z.string().datetime().optional(),
+      traceIds: z.array(z.string().uuid()).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+      holdingCanon: z.boolean().optional(),
+    });
+    try {
+      enforceVerb("ingest_decision_traces", request.auth, request.headers as never);
+      const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
+      const namespace = wiki.resolveNamespace({
+        vertical: body.vertical,
+        entityId: body.holdingCanon ? undefined : body.entityId,
+        holdingCanon: body.holdingCanon,
+      });
+      await assertWikiAccess(db, request.auth, request.headers as never, namespace, body.vertical);
+      const result = await wiki.ingestDecisionTraces({
+        namespace,
+        vertical: body.vertical,
+        entityId: body.entityId,
+        actorId: request.auth.userId,
+        since: body.since,
+        traceIds: body.traceIds,
+        limit: body.limit,
+      });
+      return reply.status(201).send({ namespace, ...result });
+    } catch (err) {
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -265,10 +327,11 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       rounds: z.number().int().min(1).max(5).optional(),
     });
     try {
+      enforceVerb("autoresearch", request.auth, request.headers as never);
       const body = schema.parse(request.body);
       if (body.entityId) await assertEntityAccess(db, body.entityId, request.auth);
       const namespace = wiki.resolveNamespace(body);
-      assertNamespaceAccess(request.auth, request.headers as never, namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, namespace, body.vertical);
       const result = await wiki.autoresearch({
         namespace,
         vertical: body.vertical,
@@ -278,10 +341,7 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       });
       return reply.status(201).send({ namespace, ...result });
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -289,11 +349,11 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
     const q = request.query as { namespace?: string; vertical?: string };
     if (!q.namespace || !q.vertical) return reply.status(400).send({ message: "namespace and vertical required" });
     try {
-      assertNamespaceAccess(request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
+      enforceVerb("export_metadata", request.auth, request.headers as never);
+      await assertWikiAccess(db, request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
       return reply.send(await wiki.exportCanvas(q.namespace));
     } catch (err) {
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -301,12 +361,12 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
     const q = request.query as { namespace?: string; vertical?: string };
     if (!q.namespace || !q.vertical) return reply.status(400).send({ message: "namespace and vertical required" });
     try {
-      assertNamespaceAccess(request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
+      enforceVerb("export_metadata", request.auth, request.headers as never);
+      await assertWikiAccess(db, request.auth, request.headers as never, q.namespace, q.vertical as VerticalKey);
       const yaml = await wiki.exportBases(q.namespace);
       return reply.send({ namespace: q.namespace, basesYaml: yaml });
     } catch (err) {
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -318,15 +378,14 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       notes: z.array(z.string()).default([]),
     });
     try {
+      enforceVerb("think", request.auth, request.headers as never);
       const body = schema.parse(request.body);
       const namespace = wiki.resolveNamespace({ vertical: body.vertical, holdingCanon: body.holdingCanon });
-      assertNamespaceAccess(request.auth, request.headers as never, namespace, body.vertical);
+      await assertWikiAccess(db, request.auth, request.headers as never, namespace, body.vertical);
       const page = await wiki.thinkingSession(namespace, body.vertical, body.topic, request.auth.userId, body.notes);
       return reply.status(201).send({ namespace, page });
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -338,9 +397,10 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       redactedBody: z.string().min(1),
     });
     try {
+      enforceVerb("bridges", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      if (!isVerifiedDirector(request.auth, request.headers as never) && request.auth.vertical !== "holding") {
-        return reply.status(403).send({ message: "Only holding/director may create bridge projections" });
+      if (!isVerifiedDirector(request.auth, request.headers as never)) {
+        return reply.status(403).send({ message: "Only verified director may create bridge projections" });
       }
       const page = await wiki.createBridgeProjection({
         ...body,
@@ -348,9 +408,7 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       });
       return reply.status(201).send({ page });
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
     }
   });
 
@@ -358,29 +416,67 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
     const schema = z.object({
       namespace: z.string().min(1),
       vertical: verticalSchema,
+      since: z.string().datetime().optional(),
+      includeBodies: z.boolean().optional(),
     });
     try {
+      enforceVerb("vault_package", request.auth, request.headers as never);
       const body = schema.parse(request.body);
-      assertNamespaceAccess(request.auth, request.headers as never, body.namespace, body.vertical);
-      const pages = await wiki.listPages(body.namespace);
-      // Non-PHI only for Obsidian satellite
-      const safe = pages.filter((p) => p.sensitivity !== "phi_ref");
-      return reply.send({
+      if (!isVerifiedDirector(request.auth, request.headers as never)) {
+        return reply.status(403).send({ message: "Obsidian sync requires verified director" });
+      }
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
+      const manifest = await wiki.buildObsidianSyncManifest({
         namespace: body.namespace,
-        format: "obsidian-markdown-manifest",
-        files: safe.map((p) => ({
-          path: `wiki/${p.pageType}/${p.slug}.md`,
-          slug: p.slug,
-          title: p.title,
-          status: p.status,
-          updatedAt: p.updatedAt,
-        })),
-        note: "Fetch page bodies via GET /api/v1/wiki/pages/:slug — PHI pages excluded",
+        vertical: body.vertical,
+        actorId: request.auth.userId,
+        since: body.since,
+        includeBodies: body.includeBodies,
       });
+      return reply.send(manifest);
     } catch (err) {
-      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
-      if (err instanceof WikiError) return reply.status(err.statusCode).send({ message: err.message });
-      throw err;
+      return mapWikiErr(err, reply);
+    }
+  });
+
+  app.post("/api/v1/wiki/obsidian/vault-package", async (request, reply) => {
+    const schema = z.object({
+      namespace: z.string().min(1),
+      vertical: verticalSchema,
+      passphrase: z.string().min(12).optional(),
+      async: z.boolean().optional(),
+    });
+    try {
+      enforceVerb("vault_package", request.auth, request.headers as never);
+      const body = schema.parse(request.body);
+      if (!isVerifiedDirector(request.auth, request.headers as never)) {
+        return reply.status(403).send({ message: "Vault packages require verified director" });
+      }
+      await assertWikiAccess(db, request.auth, request.headers as never, body.namespace, body.vertical);
+      const result = await wiki.enqueueVaultPackage({
+        namespace: body.namespace,
+        vertical: body.vertical,
+        actorId: request.auth.userId,
+        passphrase: body.passphrase,
+        asyncThreshold: body.async === false ? Number.MAX_SAFE_INTEGER : body.async === true ? 0 : 25,
+      });
+      return reply.status(result.status === "pending" ? 202 : 201).send(result);
+    } catch (err) {
+      return mapWikiErr(err, reply);
+    }
+  });
+
+  app.get("/api/v1/wiki/obsidian/vault-package/jobs/:jobId", async (request, reply) => {
+    const { jobId } = request.params as { jobId: string };
+    try {
+      enforceVerb("vault_package", request.auth, request.headers as never);
+      if (!isVerifiedDirector(request.auth, request.headers as never)) {
+        return reply.status(403).send({ message: "Vault packages require verified director" });
+      }
+      const job = await wiki.getVaultPackageJob(jobId, request.auth.userId);
+      return reply.send(job);
+    } catch (err) {
+      return mapWikiErr(err, reply);
     }
   });
 }

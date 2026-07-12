@@ -11,7 +11,7 @@ export interface AttentionQueueItem extends AttentionItem {
 }
 
 export interface MorningBriefSection {
-  type: "new_decisions" | "resolved" | "alerts" | "agent_activity" | "unchanged";
+  type: "new_decisions" | "resolved" | "alerts" | "agent_activity" | "unchanged" | "wiki_health";
   items: Array<{ id: string; label: string; linkPath: string; sourceFeature: string }>;
 }
 

@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { IntelligenceClient } from "@rarecrest/intelligence-client";
 import type { DatabaseClient } from "@rarecrest/db";
+import type { VerticalKey } from "@rarecrest/contracts";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
+import { WikiService } from "../services/wiki.js";
+import { namespaceForEntity, classifyWikiPrincipal } from "@rarecrest/wiki";
 
 const companionBodySchema = z.object({
   entityId: z.string().uuid(),
@@ -12,6 +15,7 @@ const companionBodySchema = z.object({
   requestKind: z
     .enum(["substantive", "architecture", "drive_only", "generic_summary", "migration"])
     .optional(),
+  fileAnswerToWiki: z.boolean().optional(),
 });
 
 async function buildEntityContext(
@@ -38,6 +42,31 @@ async function buildEntityContext(
   };
 }
 
+async function wikiContextForEntity(
+  db: DatabaseClient,
+  entityId: string,
+  vertical: VerticalKey,
+  question: string,
+  actorId: string,
+  opts?: { redactSensitive?: boolean },
+): Promise<string[]> {
+  try {
+    const wiki = new WikiService(db);
+    const namespace = namespaceForEntity(entityId);
+    const result = await wiki.query(namespace, question, false, actorId, {
+      redactSensitive: opts?.redactSensitive === true,
+    });
+    const citations = (result.citations as Array<{ title?: string; slug?: string }> | undefined) ?? [];
+    return [
+      `Wiki namespace ${namespace}`,
+      ...citations.slice(0, 6).map((c) => `[[${c.title ?? c.slug}]]`),
+      String(result.answer ?? "").slice(0, 1200),
+    ].filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export function registerSkillCompanionRoutes(
   app: FastifyInstance,
   db: DatabaseClient,
@@ -53,11 +82,20 @@ export function registerSkillCompanionRoutes(
         request.auth.vertical,
         entity.vertical,
       );
+      const wikiCtx = await wikiContextForEntity(
+        db,
+        body.entityId,
+        entity.vertical as VerticalKey,
+        body.question,
+        request.auth.userId,
+        { redactSensitive: classifyWikiPrincipal(request.auth) === "agent" },
+      );
+      const context = [...(body.context ?? []), ...wikiCtx];
       const result = await intelligence.skillCompanionComplete({
         entityId: body.entityId,
         vertical: request.auth.vertical,
         question: body.question,
-        context: body.context,
+        context,
         requestKind: body.requestKind,
         entityContext,
       });
@@ -69,7 +107,19 @@ export function registerSkillCompanionRoutes(
           guard,
         });
       }
-      return reply.send(result);
+      if (body.fileAnswerToWiki && typeof result.answer === "string") {
+        const wiki = new WikiService(db);
+        await wiki.ingest({
+          namespace: namespaceForEntity(body.entityId),
+          vertical: entity.vertical as VerticalKey,
+          entityId: body.entityId,
+          title: `Companion: ${body.question.slice(0, 80)}`,
+          body: result.answer,
+          sourceKind: "structured_doc",
+          actorId: request.auth.userId,
+        });
+      }
+      return reply.send({ ...result, wikiCitations: wikiCtx.slice(0, 8) });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
       if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
@@ -88,6 +138,16 @@ export function registerSkillCompanionRoutes(
         entity.vertical,
       );
 
+      const wikiCtx = await wikiContextForEntity(
+        db,
+        body.entityId,
+        entity.vertical as VerticalKey,
+        body.question,
+        request.auth.userId,
+        { redactSensitive: classifyWikiPrincipal(request.auth) === "agent" },
+      );
+      const context = [...(body.context ?? []), ...wikiCtx];
+
       reply.hijack();
       reply.raw.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -100,11 +160,12 @@ export function registerSkillCompanionRoutes(
       };
 
       try {
+        writeEvent("wiki", { citations: wikiCtx.slice(0, 8) });
         for await (const chunk of intelligence.skillCompanionStream({
           entityId: body.entityId,
           vertical: request.auth.vertical,
           question: body.question,
-          context: body.context,
+          context,
           requestKind: body.requestKind,
           entityContext,
         })) {

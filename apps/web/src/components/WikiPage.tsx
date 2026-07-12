@@ -171,6 +171,109 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
     }
   };
 
+  const runPromote = async () => {
+    if (!selectedSlug) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/wiki/promote`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          namespace,
+          vertical,
+          slug: selectedSlug,
+          reason: "Director promote from Wiki Companion",
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { status: string };
+      setStatus(`Promote: ${data.status}`);
+      await loadPages(namespace);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Promote failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runIngestTraces = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/wiki/ingest/decision-traces`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ vertical, entityId, limit: 50 }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { ingested: number; skipped: number };
+      setStatus(`Decision traces: ingested ${data.ingested}, skipped ${data.skipped}`);
+      await loadPages(namespace);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Trace ingest failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runVaultPackage = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/wiki/obsidian/vault-package`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ namespace: "holding/canon", vertical: "holding", async: false }),
+      });
+      if (!res.ok && res.status !== 202) throw new Error(await res.text());
+      let data = (await res.json()) as {
+        status?: string;
+        jobId?: string;
+        contentSha256?: string;
+        fileCount?: number;
+        downloadToken?: string;
+        note?: string;
+        result?: {
+          contentSha256?: string;
+          fileCount?: number;
+          downloadToken?: string;
+        };
+      };
+      if (data.status === "pending" && data.jobId) {
+        setStatus(`Vault package building (job ${data.jobId.slice(0, 8)}…) — polling…`);
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const poll = await fetch(`${apiBase}/api/v1/wiki/obsidian/vault-package/jobs/${data.jobId}`, {
+            headers,
+          });
+          if (!poll.ok) throw new Error(await poll.text());
+          const job = (await poll.json()) as {
+            status: string;
+            error?: string;
+            result?: typeof data;
+          };
+          if (job.status === "failed") throw new Error(job.error ?? "Vault package job failed");
+          if (job.status === "ready") {
+            data = { status: "ready", ...(job.result ?? {}) };
+            break;
+          }
+        }
+        if (data.status === "pending") throw new Error("Vault package job timed out");
+      }
+      const sha = data.contentSha256 ?? "";
+      const token = data.downloadToken ?? "";
+      setStatus(
+        `Encrypted vault package ready · ${data.fileCount ?? 0} files · sha ${sha.slice(0, 12)}… · token ${token.slice(0, 8)}…`,
+      );
+      setDoctor({ vaultPackage: data });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Vault package failed (director + holding/canon only)");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runLint = async () => {
     setBusy(true);
     setError(null);
@@ -218,6 +321,15 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
             </button>
             <button type="button" disabled={busy} onClick={runDoctor}>
               Doctor
+            </button>
+            <button type="button" disabled={busy || !selectedSlug} onClick={runPromote}>
+              Promote
+            </button>
+            <button type="button" disabled={busy} onClick={runIngestTraces}>
+              Sync traces
+            </button>
+            <button type="button" disabled={busy} onClick={runVaultPackage}>
+              Vault pkg
             </button>
           </div>
           <ul className="wiki-page-list">
