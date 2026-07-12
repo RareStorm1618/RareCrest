@@ -14,7 +14,7 @@ async function checkDatabase() {
   const healthy = await db.healthCheck();
   if (!healthy) throw new Error("database health check failed");
 
-  const migrations = await db.query<{ count: string }>(
+  const migrations = await db.query(
     "SELECT COUNT(*)::text AS count FROM rarecrest.schema_migrations",
   );
   const count = Number(migrations.rows[0]?.count ?? 0);
