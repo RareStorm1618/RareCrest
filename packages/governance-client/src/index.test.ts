@@ -27,6 +27,39 @@ describe("GovernanceClient (WO-8)", () => {
       encryptionLayerPresent: true,
     });
     expect(verdict.allowed).toBe(true);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://gov:3001/rpc/hard-rule-check",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+      }),
+    );
+  });
+
+  it("forwards internal service token when configured", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ allowed: true, reasons: [], traceId: "t1", evaluatedAt: "now" }), {
+        status: 200,
+      }),
+    );
+    const client = new GovernanceClient({
+      baseUrl: "http://gov:3001",
+      internalServiceToken: "secret-token",
+    });
+    await client.checkHardRules({
+      agentId: "a1",
+      entityId: "00000000-0000-4000-8000-000000000001",
+      vertical: "rareangels",
+      requestedRights: [],
+      touchesPhi: false,
+      touchesFinancial: false,
+      encryptionLayerPresent: true,
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "http://gov:3001/rpc/hard-rule-check",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-internal-service-token": "secret-token" }),
+      }),
+    );
   });
 
   it("throws GovernanceRpcError on HTTP failure", async () => {

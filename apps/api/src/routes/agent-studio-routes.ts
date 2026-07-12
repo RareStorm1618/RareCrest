@@ -1,14 +1,21 @@
 import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
 import type { GovernanceClient } from "@rarecrest/governance-client";
+import type { IntelligenceClient } from "@rarecrest/intelligence-client";
 import { ENVELOPE_CHECKLIST, issueAgentPassport, validatePermissionEnvelope } from "@rarecrest/agent-studio";
 import type { AgentRight } from "@rarecrest/contracts";
 import { buildAgentBlueprint } from "@rarecrest/design-studio";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
+import { appendDenyTrace } from "../trust.js";
 
-export function registerAgentStudioRoutes(app: FastifyInstance, db: DatabaseClient, governance: GovernanceClient) {
+export function registerAgentStudioRoutes(
+  app: FastifyInstance,
+  db: DatabaseClient,
+  governance: GovernanceClient,
+  intelligence: IntelligenceClient,
+) {
   app.get("/api/v1/agents/permission-envelope/checklist", async (_request, reply) => {
     return reply.send({ checklist: ENVELOPE_CHECKLIST });
   });
@@ -69,6 +76,7 @@ export function registerAgentStudioRoutes(app: FastifyInstance, db: DatabaseClie
       });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
@@ -82,10 +90,38 @@ export function registerAgentStudioRoutes(app: FastifyInstance, db: DatabaseClie
       touchesFinancial: z.boolean(),
       encryptionLayerPresent: z.boolean(),
       issuedBy: z.string().min(1),
+      humanInstructionId: z.string().optional(),
     });
     try {
       const body = schema.parse(request.body);
       await assertEntityAccess(db, body.entityId, request.auth);
+
+      const govVerdict = await governance.checkHardRules({
+        agentId: body.agentId,
+        entityId: body.entityId,
+        vertical: request.auth.vertical,
+        requestedRights: body.requestedRights,
+        touchesPhi: body.touchesPhi,
+        touchesFinancial: body.touchesFinancial,
+        encryptionLayerPresent: body.encryptionLayerPresent,
+        humanInstructionId: body.humanInstructionId,
+      });
+      if (!govVerdict.allowed) {
+        await appendDenyTrace(intelligence, {
+          vertical: request.auth.vertical,
+          entityId: body.entityId,
+          action: "passport_issuance",
+          reason: govVerdict.reasons.join("; ") || "hard_rule_deny",
+          route: "/api/v1/agents/passport",
+          statusCode: 403,
+        });
+        return reply.status(403).send({
+          message: "Passport issuance blocked by hard-rule evaluator",
+          reasons: govVerdict.reasons,
+          traceId: govVerdict.traceId,
+        });
+      }
+
       const passport = issueAgentPassport({
         agentId: body.agentId,
         entityId: body.entityId,
@@ -95,6 +131,20 @@ export function registerAgentStudioRoutes(app: FastifyInstance, db: DatabaseClie
         encryptionLayerPresent: body.encryptionLayerPresent,
         issuedBy: body.issuedBy,
       });
+      if (!passport.hardRuleClear) {
+        await appendDenyTrace(intelligence, {
+          vertical: request.auth.vertical,
+          entityId: body.entityId,
+          action: "passport_issuance",
+          reason: "local_hard_rule_precheck",
+          route: "/api/v1/agents/passport",
+          statusCode: 403,
+        });
+        return reply.status(403).send({
+          message: "Passport issuance blocked by local hard-rule pre-check",
+          constraints: passport.constraints,
+        });
+      }
 
       const inserted = await db.query(
         `INSERT INTO rarecrest.agent_passports
@@ -110,13 +160,14 @@ export function registerAgentStudioRoutes(app: FastifyInstance, db: DatabaseClie
           passport.riskTier,
           passport.validUntil,
           passport.issuedBy,
-          passport.hardRuleClear,
+          true,
           JSON.stringify(passport.constraints),
         ],
       );
       return reply.status(201).send(inserted.rows[0]);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });

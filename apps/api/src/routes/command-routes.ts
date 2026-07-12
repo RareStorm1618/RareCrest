@@ -10,16 +10,20 @@ import {
 } from "@rarecrest/command-surface";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { isVerifiedDirector } from "../trust.js";
 
 export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) {
-  async function loadAttentionQueue(): Promise<AttentionQueueItem[]> {
+  async function loadAttentionQueue(vertical?: string): Promise<AttentionQueueItem[]> {
+    const verticalFilter = vertical ? "AND e.vertical = $1" : "";
     const result = await db.query(
       `SELECT af.id, af.entity_id, COALESCE(af.signal_type, af.flag_type) AS signal_type,
               af.severity, af.message, af.link_path, af.source_ref, af.created_at, e.name AS entity_name
        FROM rarecrest.attention_flags af
        JOIN rarecrest.entities e ON e.id = af.entity_id
        WHERE af.resolved_at IS NULL
+       ${verticalFilter}
        ORDER BY af.created_at DESC`,
+      vertical ? [vertical] : [],
     );
     return result.rows.map((row) => {
       const signalType = row.signal_type as AttentionQueueItem["signalType"];
@@ -46,7 +50,7 @@ export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) 
       [directorId],
     );
     const since = session.rows[0]?.last_engaged_at ? new Date(session.rows[0].last_engaged_at as string) : null;
-    const queue = await loadAttentionQueue();
+    const queue = await loadAttentionQueue(isVerifiedDirector(request.auth, request.headers) ? undefined : request.auth.vertical);
     const newItems = since
       ? queue.filter((q) => new Date(q.createdAt) > since)
       : queue;
@@ -68,14 +72,14 @@ export function registerCommandRoutes(app: FastifyInstance, db: DatabaseClient) 
     return reply.send({ ...brief, portfolioClear: isPortfolioClear(queue) });
   });
 
-  app.get("/api/v1/command/attention-queue", async (_request, reply) => {
-    const queue = await loadAttentionQueue();
+  app.get("/api/v1/command/attention-queue", async (request, reply) => {
+    const queue = await loadAttentionQueue(isVerifiedDirector(request.auth, request.headers) ? undefined : request.auth.vertical);
     return reply.send({ items: queue, portfolioClear: isPortfolioClear(queue) });
   });
 
   app.get("/api/v1/command/priorities", async (request, reply) => {
     const decisionsOnly = request.query as { decisionsOnly?: string };
-    const queue = await loadAttentionQueue();
+    const queue = await loadAttentionQueue(isVerifiedDirector(request.auth, request.headers) ? undefined : request.auth.vertical);
     const filtered = decisionsOnly.decisionsOnly === "true" ? filterDecisionItems(queue) : queue;
     return reply.send({ ranked: rankPriorityItems(filtered) });
   });

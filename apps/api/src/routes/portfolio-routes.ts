@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AuthContext } from "../auth.js";
 import { formatZodErrors, verticalSchema } from "../validation.js";
 import { mapEntityRow, PortfolioService } from "../services/portfolio.js";
+import { isVerifiedDirector } from "../trust.js";
 
 const entityTypeSchema = z.enum([
   "nonprofit",
@@ -24,10 +25,9 @@ const registerEntitySchema = z.object({
   band: z.string().default("unknown"),
 });
 
-/** Director role sees all verticals in portfolio roll-up */
+/** Director role sees all verticals in portfolio roll-up (trust-mode gated). */
 export function isDirectorScope(auth: AuthContext, request: { headers: Record<string, unknown> }): boolean {
-  const role = request.headers["x-user-role"];
-  return role === "director" || auth.userId === "director-1";
+  return isVerifiedDirector(auth, request.headers);
 }
 
 export function registerPortfolioRoutes(app: FastifyInstance, portfolio: PortfolioService) {

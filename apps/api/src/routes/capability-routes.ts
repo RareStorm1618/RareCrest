@@ -7,6 +7,7 @@ import {
 } from "@rarecrest/capability-registry";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 export function registerCapabilityRoutes(app: FastifyInstance, db: DatabaseClient) {
   app.post("/api/v1/capabilities/evaluate", async (request, reply) => {
@@ -22,6 +23,7 @@ export function registerCapabilityRoutes(app: FastifyInstance, db: DatabaseClien
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const coverage = evaluateCapabilityCoverage(body.statuses as CapabilityStatus[]);
       await db.query(
         `INSERT INTO rarecrest.capability_registry_snapshots (entity_id, coverage_pct, covered, gaps)
@@ -31,6 +33,7 @@ export function registerCapabilityRoutes(app: FastifyInstance, db: DatabaseClien
       return reply.send({ entityId: body.entityId, ...coverage });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
@@ -48,6 +51,7 @@ export function registerCapabilityRoutes(app: FastifyInstance, db: DatabaseClien
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const agencyMap = buildAgencyMap(body.statuses as CapabilityStatus[]);
       await db.query(
         `INSERT INTO rarecrest.capability_agency_maps (entity_id, map)
@@ -57,32 +61,39 @@ export function registerCapabilityRoutes(app: FastifyInstance, db: DatabaseClien
       return reply.send({ entityId: body.entityId, agencyMap });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
 
   app.get("/api/v1/capabilities/:entityId/latest", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const coverage = await db.query(
-      `SELECT coverage_pct AS "coveragePct", covered, gaps, created_at AS "createdAt"
-       FROM rarecrest.capability_registry_snapshots
-       WHERE entity_id = $1
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [entityId],
-    );
-    const agencyMap = await db.query(
-      `SELECT map, created_at AS "createdAt"
-       FROM rarecrest.capability_agency_maps
-       WHERE entity_id = $1
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [entityId],
-    );
-    return reply.send({
-      entityId,
-      coverage: coverage.rows[0] ?? null,
-      agencyMap: agencyMap.rows[0]?.map ?? [],
-    });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const coverage = await db.query(
+        `SELECT coverage_pct AS "coveragePct", covered, gaps, created_at AS "createdAt"
+         FROM rarecrest.capability_registry_snapshots
+         WHERE entity_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [entityId],
+      );
+      const agencyMap = await db.query(
+        `SELECT map, created_at AS "createdAt"
+         FROM rarecrest.capability_agency_maps
+         WHERE entity_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [entityId],
+      );
+      return reply.send({
+        entityId,
+        coverage: coverage.rows[0] ?? null,
+        agencyMap: agencyMap.rows[0]?.map ?? [],
+      });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 }

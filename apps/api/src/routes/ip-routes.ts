@@ -8,6 +8,7 @@ import {
 } from "@rarecrest/ip-management";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 export function registerIpRoutes(app: FastifyInstance, db: DatabaseClient) {
   app.post("/api/v1/ip/assets", async (request, reply) => {
@@ -35,6 +36,7 @@ export function registerIpRoutes(app: FastifyInstance, db: DatabaseClient) {
 
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const asset = registerAsset({
         entityId: body.entityId,
         assetType: body.assetType,
@@ -78,24 +80,31 @@ export function registerIpRoutes(app: FastifyInstance, db: DatabaseClient) {
       return reply.status(201).send(result.rows[0]);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
 
   app.get("/api/v1/ip/assets/:entityId", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const result = await db.query(
-      `SELECT id, entity_id AS "entityId", asset_type AS "assetType", title, jurisdiction,
-              filing_date AS "filingDate", registration_number AS "registrationNumber",
-              owner_id AS "ownerId", beneficial_owner_id AS "beneficialOwnerId",
-              lifecycle_status AS "status", title_valid AS "titleValid", title_gaps AS "titleGaps",
-              created_at AS "createdAt"
-       FROM rarecrest.ip_assets
-       WHERE entity_id = $1
-       ORDER BY created_at DESC`,
-      [entityId],
-    );
-    return reply.send({ entityId, assets: result.rows });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const result = await db.query(
+        `SELECT id, entity_id AS "entityId", asset_type AS "assetType", title, jurisdiction,
+                filing_date AS "filingDate", registration_number AS "registrationNumber",
+                owner_id AS "ownerId", beneficial_owner_id AS "beneficialOwnerId",
+                lifecycle_status AS "status", title_valid AS "titleValid", title_gaps AS "titleGaps",
+                created_at AS "createdAt"
+         FROM rarecrest.ip_assets
+         WHERE entity_id = $1
+         ORDER BY created_at DESC`,
+        [entityId],
+      );
+      return reply.send({ entityId, assets: result.rows });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.post("/api/v1/ip/reconciliation/:entityId", async (request, reply) => {
@@ -105,6 +114,7 @@ export function registerIpRoutes(app: FastifyInstance, db: DatabaseClient) {
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, entityId, request.auth);
       const result = await db.query(
         `SELECT id, title, lifecycle_status AS status FROM rarecrest.ip_assets WHERE entity_id = $1`,
         [entityId],
@@ -113,6 +123,7 @@ export function registerIpRoutes(app: FastifyInstance, db: DatabaseClient) {
       return reply.send({ entityId, report });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });

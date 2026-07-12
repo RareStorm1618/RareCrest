@@ -11,6 +11,7 @@ import {
 } from "@rarecrest/skill-companion";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 export function registerWorkflowRoutes(app: FastifyInstance, db: DatabaseClient, intelligence: IntelligenceClient) {
   app.get("/api/v1/workflows", async (_request, reply) => {
@@ -28,6 +29,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, db: DatabaseClient,
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const workflow = getWorkflow(body.workflowId);
       const existing = await db.query(
         `SELECT id, completed_steps FROM rarecrest.workflow_runs
@@ -81,6 +83,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, db: DatabaseClient,
       });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });

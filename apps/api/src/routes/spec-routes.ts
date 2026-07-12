@@ -16,7 +16,7 @@ const specBodySchema = z.object({
   requestedRights: z.array(z.enum(["sensitive_data", "code_execution", "external_comms"])).optional(),
   touchesPhi: z.boolean().default(false),
   touchesFinancial: z.boolean().default(false),
-  encryptionLayerPresent: z.boolean().default(true),
+  encryptionLayerPresent: z.boolean().default(false),
 });
 
 async function validateSpec(

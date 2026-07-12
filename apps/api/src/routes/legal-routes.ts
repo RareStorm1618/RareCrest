@@ -8,6 +8,7 @@ import {
 } from "@rarecrest/legal-compliance";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
   app.post("/api/v1/legal/matters", async (request, reply) => {
@@ -18,6 +19,7 @@ export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       if (!validateLegalMatterStatus(body.status)) {
         return reply.status(400).send({ message: "Invalid legal matter status" });
       }
@@ -31,18 +33,25 @@ export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
       return reply.status(201).send(result.rows[0]);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
 
   app.get("/api/v1/legal/matters/:entityId", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const result = await db.query(
-      `SELECT id, entity_id AS "entityId", title, status, disclaimer, created_at AS "createdAt"
-       FROM rarecrest.legal_matters WHERE entity_id = $1 ORDER BY created_at DESC`,
-      [entityId],
-    );
-    return reply.send({ entityId, matters: result.rows });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const result = await db.query(
+        `SELECT id, entity_id AS "entityId", title, status, disclaimer, created_at AS "createdAt"
+         FROM rarecrest.legal_matters WHERE entity_id = $1 ORDER BY created_at DESC`,
+        [entityId],
+      );
+      return reply.send({ entityId, matters: result.rows });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.post("/api/v1/legal/regulatory-calendar", async (request, reply) => {
@@ -53,6 +62,7 @@ export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const periodStart = body.periodStart ?? new Date().toISOString();
       const events = buildRegulatoryCalendar(body.entityId, body.regimes, periodStart);
 
@@ -68,21 +78,28 @@ export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
       return reply.status(201).send({ entityId: body.entityId, periodStart, events });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
 
   app.get("/api/v1/legal/regulatory-calendar/:entityId", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const result = await db.query(
-      `SELECT id, entity_id AS "entityId", regime, event_type AS "eventType", due_at AS "dueAt",
-              cadence, priority, source_period_start AS "sourcePeriodStart", created_at AS "createdAt"
-       FROM rarecrest.regulatory_calendar_events
-       WHERE entity_id = $1
-       ORDER BY due_at ASC`,
-      [entityId],
-    );
-    return reply.send({ entityId, events: result.rows });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const result = await db.query(
+        `SELECT id, entity_id AS "entityId", regime, event_type AS "eventType", due_at AS "dueAt",
+                cadence, priority, source_period_start AS "sourcePeriodStart", created_at AS "createdAt"
+         FROM rarecrest.regulatory_calendar_events
+         WHERE entity_id = $1
+         ORDER BY due_at ASC`,
+        [entityId],
+      );
+      return reply.send({ entityId, events: result.rows });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.post("/api/v1/legal/counsel-escalations", async (request, reply) => {
@@ -96,6 +113,7 @@ export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const decision = evaluateCounselEscalation({
         matterId: body.matterId,
         issueType: body.issueType,
@@ -123,21 +141,28 @@ export function registerLegalRoutes(app: FastifyInstance, db: DatabaseClient) {
       return reply.status(201).send(inserted.rows[0]);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
 
   app.get("/api/v1/legal/counsel-escalations/:entityId", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const result = await db.query(
-      `SELECT id, entity_id AS "entityId", matter_id AS "matterId", trigger_code AS "triggerCode",
-              rationale, urgency, required_within_hours AS "requiredWithinHours",
-              escalated, created_at AS "createdAt"
-       FROM rarecrest.counsel_escalations
-       WHERE entity_id = $1
-       ORDER BY created_at DESC`,
-      [entityId],
-    );
-    return reply.send({ entityId, escalations: result.rows });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const result = await db.query(
+        `SELECT id, entity_id AS "entityId", matter_id AS "matterId", trigger_code AS "triggerCode",
+                rationale, urgency, required_within_hours AS "requiredWithinHours",
+                escalated, created_at AS "createdAt"
+         FROM rarecrest.counsel_escalations
+         WHERE entity_id = $1
+         ORDER BY created_at DESC`,
+        [entityId],
+      );
+      return reply.send({ entityId, escalations: result.rows });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 }

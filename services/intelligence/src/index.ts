@@ -29,6 +29,16 @@ export async function buildIntelligenceApp() {
   const companion = new SkillCompanionService(router);
   const autoCapture = new AutoCaptureService();
 
+  app.addHook("preHandler", async (request, reply) => {
+    if (request.url === "/health" || request.url.startsWith("/health?")) return;
+    const expected = process.env.INTERNAL_SERVICE_TOKEN;
+    if (!expected) return;
+    const provided = request.headers["x-internal-service-token"];
+    if (provided !== expected) {
+      return reply.status(401).send({ message: "Unauthorized internal RPC" });
+    }
+  });
+
   app.get("/health", async () => ({
     status: "ok",
     service: "intelligence-services",

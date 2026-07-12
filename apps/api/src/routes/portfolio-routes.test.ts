@@ -1,14 +1,22 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { isDirectorScope } from "./portfolio-routes.js";
 
 describe("isDirectorScope", () => {
   const auth = { userId: "director-1", vertical: "rarestorm" as const };
 
-  it("returns true for director-1 user id", () => {
+  beforeEach(() => {
+    process.env.AUTH_TRUST_MODE = "dev";
+  });
+
+  afterEach(() => {
+    delete process.env.AUTH_TRUST_MODE;
+  });
+
+  it("returns true for director-1 user id in dev mode", () => {
     expect(isDirectorScope(auth, { headers: {} })).toBe(true);
   });
 
-  it("returns true when x-user-role is director", () => {
+  it("returns true when x-user-role is director in dev mode", () => {
     expect(
       isDirectorScope(
         { userId: "other", vertical: "rareangels" },
@@ -24,5 +32,21 @@ describe("isDirectorScope", () => {
         { headers: {} },
       ),
     ).toBe(false);
+  });
+
+  it("requires holding vertical in strict mode", () => {
+    process.env.AUTH_TRUST_MODE = "strict";
+    expect(
+      isDirectorScope(
+        { userId: "other", vertical: "rareangels" },
+        { headers: { "x-user-role": "director" } },
+      ),
+    ).toBe(false);
+    expect(
+      isDirectorScope(
+        { userId: "other", vertical: "holding" },
+        { headers: { "x-user-role": "director" } },
+      ),
+    ).toBe(true);
   });
 });

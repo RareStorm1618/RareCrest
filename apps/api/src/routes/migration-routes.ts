@@ -4,6 +4,7 @@ import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { MigrationRecommenderService } from "../services/migration-recommender.js";
 import { IMMUNE_SYSTEM_DESCRIPTORS } from "@rarecrest/diagnostics";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 const immuneSchema = z.enum(["weak", "moderate", "strong"]);
 
@@ -19,6 +20,7 @@ export function registerMigrationRoutes(app: FastifyInstance, db: DatabaseClient
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, entityId, request.auth);
       const result = await recommender.recommend(entityId, body);
       return reply.send({
         ...result,
@@ -26,6 +28,7 @@ export function registerMigrationRoutes(app: FastifyInstance, db: DatabaseClient
       });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });

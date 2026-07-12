@@ -4,15 +4,19 @@ import type { DecisionTraceEntry } from "@rarecrest/contracts";
 export interface IntelligenceClientConfig {
   baseUrl: string;
   timeoutMs?: number;
+  /** Shared secret for internal RPC. Sent as x-internal-service-token when set. */
+  internalServiceToken?: string;
 }
 
 export class IntelligenceClient {
   private baseUrl: string;
   private timeoutMs: number;
+  private internalServiceToken?: string;
 
   constructor(config: IntelligenceClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
     this.timeoutMs = config.timeoutMs ?? 10000;
+    this.internalServiceToken = config.internalServiceToken;
   }
 
   async appendTrace(input: {
@@ -55,7 +59,7 @@ export class IntelligenceClient {
   }): AsyncGenerator<{ event: string; data: Record<string, unknown> }> {
     const response = await fetch(`${this.baseUrl}/rpc/skill-companion/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.headers(),
       body: JSON.stringify(input),
     });
     if (!response.ok || !response.body) {
@@ -102,13 +106,21 @@ export class IntelligenceClient {
     }
   }
 
+  private headers(): Record<string, string> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.internalServiceToken) {
+      headers["x-internal-service-token"] = this.internalServiceToken;
+    }
+    return headers;
+  }
+
   private async post<T>(path: string, body: unknown): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.headers(),
         body: JSON.stringify(body),
         signal: controller.signal,
       });

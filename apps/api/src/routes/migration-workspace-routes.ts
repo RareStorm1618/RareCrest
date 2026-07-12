@@ -15,16 +15,23 @@ import {
 } from "@rarecrest/migration-workspace";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 export function registerMigrationWorkspaceRoutes(app: FastifyInstance, db: DatabaseClient) {
   app.get("/api/v1/migration/:entityId/rewrite-steps", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const result = await db.query(
-      `SELECT steps FROM rarecrest.rewrite_step_progress WHERE entity_id = $1`,
-      [entityId],
-    );
-    const steps = result.rows[0]?.steps ?? [];
-    return reply.send({ entityId, stepDefinitions: REWRITE_STEPS, progress: steps });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const result = await db.query(
+        `SELECT steps FROM rarecrest.rewrite_step_progress WHERE entity_id = $1`,
+        [entityId],
+      );
+      const steps = result.rows[0]?.steps ?? [];
+      return reply.send({ entityId, stepDefinitions: REWRITE_STEPS, progress: steps });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.post("/api/v1/migration/rewrite-steps", async (request, reply) => {
@@ -35,6 +42,7 @@ export function registerMigrationWorkspaceRoutes(app: FastifyInstance, db: Datab
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
       const stepId = body.stepId as RewriteStepId;
       const existing = await db.query(`SELECT steps FROM rarecrest.rewrite_step_progress WHERE entity_id = $1`, [body.entityId]);
       const progress = (existing.rows[0]?.steps as Array<{
@@ -54,38 +62,59 @@ export function registerMigrationWorkspaceRoutes(app: FastifyInstance, db: Datab
       return reply.send({ entityId: body.entityId, stepId, complete, warning: seqError, trackedAt: new Date().toISOString() });
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
 
   app.post("/api/v1/migration/edge-twin", async (request, reply) => {
     const schema = z.object({ entityId: z.string().uuid(), parallelRunWeeks: z.number().min(1) });
-    const body = schema.parse(request.body);
-    const plan = buildEdgeTwinPlan(body.entityId, body.parallelRunWeeks);
-    await db.query(`INSERT INTO rarecrest.edge_twin_plans (entity_id, plan) VALUES ($1, $2::jsonb)`, [body.entityId, JSON.stringify(plan)]);
-    return reply.send({ entityId: body.entityId, plan });
+    try {
+      const body = schema.parse(request.body);
+      await assertEntityAccess(db, body.entityId, request.auth);
+      const plan = buildEdgeTwinPlan(body.entityId, body.parallelRunWeeks);
+      await db.query(`INSERT INTO rarecrest.edge_twin_plans (entity_id, plan) VALUES ($1, $2::jsonb)`, [body.entityId, JSON.stringify(plan)]);
+      return reply.send({ entityId: body.entityId, plan });
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.get("/api/v1/migration/override-trends/:entityId", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const result = await db.query(
-      `SELECT id, entity_id AS "entityId", agent_id AS "agentId", reason, created_at AS "createdAt"
-       FROM rarecrest.override_events WHERE entity_id = $1 ORDER BY created_at DESC`,
-      [entityId],
-    );
-    const evaluation = evaluateDeprecationGate(result.rows as never);
-    return reply.send({ entityId, overrides: result.rows, ...evaluation });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const result = await db.query(
+        `SELECT id, entity_id AS "entityId", agent_id AS "agentId", reason, created_at AS "createdAt"
+         FROM rarecrest.override_events WHERE entity_id = $1 ORDER BY created_at DESC`,
+        [entityId],
+      );
+      const evaluation = evaluateDeprecationGate(result.rows as never);
+      return reply.send({ entityId, overrides: result.rows, ...evaluation });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.post("/api/v1/migration/override-trends/:entityId", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
     const schema = z.object({ agentId: z.string(), reason: z.string().min(1) });
-    const body = schema.parse(request.body);
-    await db.query(
-      `INSERT INTO rarecrest.override_events (entity_id, agent_id, reason) VALUES ($1, $2, $3)`,
-      [entityId, body.agentId, body.reason],
-    );
-    return reply.status(201).send({ recorded: true });
+    try {
+      const body = schema.parse(request.body);
+      await assertEntityAccess(db, entityId, request.auth);
+      await db.query(
+        `INSERT INTO rarecrest.override_events (entity_id, agent_id, reason) VALUES ($1, $2, $3)`,
+        [entityId, body.agentId, body.reason],
+      );
+      return reply.status(201).send({ recorded: true });
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.post("/api/v1/migration/transition-budget", async (request, reply) => {

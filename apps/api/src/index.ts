@@ -50,10 +50,12 @@ export async function buildApp() {
 
   const governance = new GovernanceClient({
     baseUrl: process.env.GOVERNANCE_ENGINE_URL ?? "http://localhost:3001",
+    internalServiceToken: process.env.INTERNAL_SERVICE_TOKEN,
   });
 
   const intelligence = new IntelligenceClient({
     baseUrl: process.env.INTELLIGENCE_SERVICES_URL ?? "http://localhost:3002",
+    internalServiceToken: process.env.INTERNAL_SERVICE_TOKEN,
   });
 
   await app.register(cors, { origin: true });
@@ -85,7 +87,7 @@ export async function buildApp() {
   registerRegulatoryProfileRoutes(app, db);
   registerAttentionFlagRoutes(app, db);
   registerWorkflowRoutes(app, db, intelligence);
-  registerAgentStudioRoutes(app, db, governance);
+  registerAgentStudioRoutes(app, db, governance, intelligence);
   registerMigrationWorkspaceRoutes(app, db);
   registerLegalRoutes(app, db);
   registerVendorShortcutRoutes(app, db);
@@ -95,7 +97,7 @@ export async function buildApp() {
   registerExportRoutes(app, db, intelligence);
   registerSkillCompanionRoutes(app, db, intelligence);
   registerSpecRoutes(app, db, governance);
-  registerGovernanceGatewayRoutes(app, governance, intelligence);
+  registerGovernanceGatewayRoutes(app, db, governance, intelligence);
   registerEntityRegistryRoutes(app, db);
   registerRuntimeRoutes(app, db, intelligence, governance);
   registerIpRoutes(app, db);

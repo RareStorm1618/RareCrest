@@ -20,6 +20,7 @@ import {
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
+import { deriveActivationControls, appendDenyTrace } from "../trust.js";
 
 const activationControlsSchema = z.object({
   hardRuleClear: z.boolean(),
@@ -59,6 +60,7 @@ export function registerRuntimeRoutes(
       status: z.enum(["running", "inactive", "halted"]).default("inactive"),
       health: z.enum(["healthy", "degraded", "critical"]).default("healthy"),
       currentActivity: z.string().optional(),
+      /** Client-supplied controls are ignored; kept optional for backward-compatible payloads. */
       activationControls: activationControlsSchema.optional(),
     });
     try {
@@ -66,17 +68,30 @@ export function registerRuntimeRoutes(
       await assertEntityAccess(db, body.entityId, request.auth);
 
       if (body.status === "running") {
-        const controls = body.activationControls;
-        if (!controls) {
-          return reply.status(400).send({ message: "activationControls required when status is running" });
-        }
+        const controls = await deriveActivationControls(db, body.entityId, body.agentId);
         const verdict = await governance.evaluateActivation({
           agentId: body.agentId,
           entityId: body.entityId,
-          ...controls,
+          hardRuleClear: controls.hardRuleClear,
+          envelopeEnforceable: controls.envelopeEnforceable,
+          evaluationSuiteRegistered: controls.evaluationSuiteRegistered,
+          killSwitchesLive: controls.killSwitchesLive,
+          humanReviewRoutingLive: controls.humanReviewRoutingLive,
         });
         if (!verdict.permitted) {
-          return reply.status(403).send({ message: "Activation blocked", ...verdict });
+          await appendDenyTrace(intelligence, {
+            vertical: request.auth.vertical,
+            entityId: body.entityId,
+            action: "runtime_agent_activation",
+            reason: "activation_controls_missing",
+            route: "/api/v1/runtime/agents",
+            statusCode: 403,
+          });
+          return reply.status(403).send({
+            message: "Activation blocked — controls derived server-side",
+            ...verdict,
+            derivedControls: controls,
+          });
         }
       }
 
@@ -145,6 +160,44 @@ export function registerRuntimeRoutes(
           [body.agentId, body.entityId, agent.rows[0].version, body.reason],
         );
         return reply.send({ agentId: body.agentId, status: "halted_instead", message: "No prior known-good state — agent halted" });
+      }
+
+      // Fail-closed: rolling back to "running" requires the same server-derived activation controls.
+      const controls = await deriveActivationControls(db, body.entityId, body.agentId);
+      const activation = await governance.evaluateActivation({
+        agentId: body.agentId,
+        entityId: body.entityId,
+        hardRuleClear: controls.hardRuleClear,
+        envelopeEnforceable: controls.envelopeEnforceable,
+        evaluationSuiteRegistered: controls.evaluationSuiteRegistered,
+        killSwitchesLive: controls.killSwitchesLive,
+        humanReviewRoutingLive: controls.humanReviewRoutingLive,
+      });
+      if (!activation.permitted) {
+        await db.query(
+          `UPDATE rarecrest.agent_roster SET status = 'halted', updated_at = NOW() WHERE agent_id = $1 AND entity_id = $2`,
+          [body.agentId, body.entityId],
+        );
+        await db.query(
+          `INSERT INTO rarecrest.agent_rollbacks (agent_id, entity_id, from_version, to_version, reason, status)
+           VALUES ($1, $2, $3, $4, $5, 'halted_instead')`,
+          [body.agentId, body.entityId, agent.rows[0].version, targetVersion, body.reason],
+        );
+        await appendDenyTrace(intelligence, {
+          vertical: request.auth.vertical,
+          entityId: body.entityId,
+          action: "agent_rollback",
+          reason: "activation_controls_missing_after_rollback",
+          route: "/api/v1/runtime/rollback",
+          statusCode: 403,
+        });
+        return reply.status(403).send({
+          agentId: body.agentId,
+          status: "halted_instead",
+          message: "Rollback blocked — activation controls not clear; agent halted",
+          missingControls: activation.missingControls,
+          derivedControls: controls,
+        });
       }
 
       await db.query(
@@ -219,19 +272,81 @@ export function registerRuntimeRoutes(
     const schema = z.object({ approved: z.boolean(), resolutionNote: z.string().min(1) });
     try {
       const body = schema.parse(request.body);
+      const pending = await db.query(
+        `SELECT hr.id, hr.entity_id AS "entityId", hr.agent_id AS "agentId", hr.category,
+                hr.held_action AS "heldAction"
+         FROM rarecrest.human_review_queue hr
+         JOIN rarecrest.entities e ON e.id = hr.entity_id
+         WHERE hr.id = $1 AND hr.status = 'pending' AND e.vertical = $2 AND e.deleted_at IS NULL`,
+        [id, request.auth.vertical],
+      );
+      if (pending.rows.length === 0) return reply.status(404).send({ message: "Item not found" });
+      const pendingRow = pending.rows[0];
+      const heldAction = pendingRow.heldAction as Record<string, unknown>;
+
+      if (body.approved) {
+        const category = pendingRow.category as string;
+        const touchesFinancial =
+          category === "money" || heldAction.touchesFinancial === true || heldAction.action === "trade";
+        if (touchesFinancial) {
+          const humanInstructionId =
+            typeof heldAction.humanInstructionId === "string" ? heldAction.humanInstructionId.trim() : "";
+          if (!humanInstructionId) {
+            await appendDenyTrace(intelligence, {
+              vertical: request.auth.vertical,
+              entityId: pendingRow.entityId as string,
+              action: "held_action_release",
+              reason: "missing_human_instruction_id",
+              route: "/api/v1/runtime/human-review/:id/resolve",
+              statusCode: 403,
+            });
+            return reply.status(403).send({
+              message: "Financial held-action release requires humanInstructionId on heldAction",
+              reviewId: id,
+            });
+          }
+          const verdict = await governance.checkHardRules({
+            agentId: String(pendingRow.agentId ?? "unknown"),
+            entityId: pendingRow.entityId as string,
+            vertical: request.auth.vertical,
+            requestedRights: [],
+            touchesPhi: false,
+            touchesFinancial: true,
+            encryptionLayerPresent: true,
+            humanInstructionId,
+          });
+          if (!verdict.allowed) {
+            await appendDenyTrace(intelligence, {
+              vertical: request.auth.vertical,
+              entityId: pendingRow.entityId as string,
+              action: "held_action_release",
+              reason: verdict.reasons.join("; ") || "hard_rule_deny",
+              route: "/api/v1/runtime/human-review/:id/resolve",
+              statusCode: 403,
+            });
+            return reply.status(403).send({
+              message: "Financial held-action release blocked by hard-rule evaluator",
+              reasons: verdict.reasons,
+              traceId: verdict.traceId,
+              reviewId: id,
+            });
+          }
+        }
+      }
+
       const result = await db.query(
         `UPDATE rarecrest.human_review_queue hr
          SET status = $1, resolution_note = $2, resolved_at = NOW()
          FROM rarecrest.entities e
          WHERE hr.id = $3 AND hr.status = 'pending' AND e.id = hr.entity_id AND e.vertical = $4
-         RETURNING hr.id, hr.status, hr.entity_id AS "entityId", hr.held_action AS "heldAction"`,
+         RETURNING hr.id, hr.status, hr.entity_id AS "entityId", hr.agent_id AS "agentId",
+                   hr.category, hr.held_action AS "heldAction"`,
         [body.approved ? "approved" : "denied", body.resolutionNote, id, request.auth.vertical],
       );
       if (result.rows.length === 0) return reply.status(404).send({ message: "Item not found" });
       const row = result.rows[0];
       let actionReleased = false;
       if (body.approved) {
-        const heldAction = row.heldAction as Record<string, unknown>;
         const release = buildHeldActionRelease(id, heldAction);
         if (release) {
           await intelligence.appendTrace({
