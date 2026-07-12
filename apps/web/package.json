@@ -13,6 +13,7 @@
   "dependencies": {
     "@rarecrest/api-client": "workspace:*",
     "@rarecrest/contracts": "workspace:*",
+    "@rarecrest/diagnostics": "workspace:*",
     "@rarecrest/ui": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

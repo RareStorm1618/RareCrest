@@ -26,6 +26,9 @@ importers:
       '@rarecrest/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rarecrest/diagnostics':
+        specifier: workspace:*
+        version: link:../../packages/diagnostics
       '@rarecrest/governance-client':
         specifier: workspace:*
         version: link:../../packages/governance-client
@@ -85,6 +88,9 @@ importers:
       '@rarecrest/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@rarecrest/diagnostics':
+        specifier: workspace:*
+        version: link:../../packages/diagnostics
       '@rarecrest/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -148,6 +154,15 @@ importers:
       '@types/pg':
         specifier: ^8.15.2
         version: 8.20.0
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
+  packages/diagnostics:
+    devDependencies:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-31
 
 **Work Order Number:** WO-31
-**Work Order Title:** WO-31 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:40Z
+**Work Order Title:** Build DiagnosticsWorkspace assessment surface (Client App)
+**Initialized At (UTC):** 2026-07-12T00:30:08Z
 
 ## Phase 1: Start / Context Gathering
 

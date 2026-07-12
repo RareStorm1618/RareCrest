@@ -22,3 +22,15 @@ ul[role="alert"] { color: #ff6b6b; }
 .holding-badge { background: #7c5cff; color: white; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.7rem; margin-right: 0.5rem; }
 .portfolio-empty { padding: 2rem; text-align: center; color: #888; }
 .selected-entity { color: #4a9eff; font-size: 0.875rem; }
+.diagnostics-workspace { margin-top: 1rem; }
+.run-order { list-style: decimal; padding-left: 1.5rem; margin-bottom: 1.5rem; }
+.run-order li.locked { color: #666; }
+.run-order li.complete { color: #4ade80; }
+.dimension-row { display: grid; grid-template-columns: 1fr 80px; gap: 1rem; margin-bottom: 1rem; padding: 0.75rem; background: #1a1d26; border-radius: 8px; }
+.dimension-row small { display: block; color: #888; font-size: 0.75rem; }
+.band-result { margin-top: 1rem; padding: 1rem; background: #1a3d2e; border-radius: 8px; }
+.deployment-lock, .migration-halt { padding: 1rem; background: #3d1a1a; border-radius: 8px; margin-top: 1rem; }
+.retake-due { color: #fbbf24; }
+.incomplete-hint { color: #888; }
+.actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.actions button { padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; background: #4a9eff; color: white; }

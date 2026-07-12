@@ -1,29 +1,34 @@
-<!--lint disable no-undefined-references strong-marker-->
-
 # Implementation Plan: WO-31
 
-**Work Order:** WO-31 — WO-31 RareCrest implementation
-**Created At (UTC):** 2026-07-11T23:54:40Z
+**Work Order:** WO-31 — Build DiagnosticsWorkspace assessment surface (Client App)
+**Created At (UTC):** 2026-07-11T17:30:00Z
 
 ## Summary
 
-_1-3 sentences: what this work order delivers and the high-level approach._
+Production-depth DiagnosticsWorkspace: eight-dimension readiness scoring with anchored descriptors, mandatory run order with dependency locking, resumable partial state, band interpretation, governance deployment lock, and migration halt surfacing. Server-owned state via API; zero-authority web surface.
 
 ## Code Reuse And Package Structure
 
-_List critical existing files/components/services/hooks/utilities/schemas/tests to reuse or import as dependencies. Note reuse/extract/follow-pattern decisions. Then list files/packages/directories intentionally created or modified by this plan, grouped by module or layer. Do not list incidental import-order, barrel export, formatting, generated-code, or mechanical follow-on edits._
+- Reuse `@rarecrest/db` for assessment persistence
+- Reuse `@rarecrest/contracts` for vertical types
+- New `@rarecrest/diagnostics` package for deterministic scoring logic
+- Extend `apps/api` with `DiagnosticsService` + routes
+- New `DiagnosticsWorkspace` React component in `apps/web`
 
 ## Components And Flow
 
-_Name Blueprint-defined components, supporting components, important interfaces/signatures, and call/data flow._
-
-## Steps
-
-_Ordered implementation steps. Each step should produce a reviewable, preferably compilable intermediate state. Note parallelizable steps (touch different files, no dependency)._
-
-1. **[title]** - _what to do, where_
-2. **[title]** - _what to do, where_
+1. Director selects entity from Portfolio → opens DiagnosticsWorkspace
+2. `GET /api/v1/diagnostics/:entityId` returns run order, dimensions, partial state
+3. `PATCH .../responses` saves partial scores (AC-DIAG-001.5)
+4. `POST .../steps/readiness_score/complete` computes band via `@rarecrest/diagnostics`
+5. UI renders locked steps, band result, deployment lock, migration halt
 
 ## Testing
 
-_Automated and manual tests: suites, new/changed test files, scenarios, and commands. Not for requirements/blueprint conformance—that belongs in review._
+- `packages/diagnostics`: 10 unit tests (bands, dabbling, token-maxxing, governance min, run order)
+- API auth/portfolio tests remain green (13 tests)
+
+## Evidence
+
+- Validators exit 0 for WO-31
+- review-log.md: APPROVED code_grade 10
