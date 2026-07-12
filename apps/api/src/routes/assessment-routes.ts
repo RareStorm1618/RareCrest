@@ -1,0 +1,39 @@
+import type { FastifyInstance } from "fastify";
+import type { DatabaseClient } from "@rarecrest/db";
+import { sequencerState } from "@rarecrest/diagnostics";
+import { z } from "zod";
+import { formatZodErrors } from "../validation.js";
+import { DiagnosticsService } from "../services/diagnostics.js";
+
+export function registerAssessmentRoutes(app: FastifyInstance, db: DatabaseClient) {
+  const diagnostics = new DiagnosticsService(db);
+
+  app.get("/api/v1/assessments/:entityId/sequencer", async (request, reply) => {
+    const { entityId } = request.params as { entityId: string };
+    const assessment = await diagnostics.getOrCreateAssessment(entityId, request.auth.vertical);
+    const completed = (assessment.responses.completedSteps as string[] | undefined) ?? [];
+    const history = await db.query(
+      `SELECT id, status, completed_at AS "completedAt", created_at AS "createdAt"
+       FROM rarecrest.readiness_assessments WHERE entity_id = $1 ORDER BY created_at DESC`,
+      [entityId],
+    );
+    return reply.send({
+      entityId,
+      assessmentId: assessment.id,
+      runOrder: sequencerState(completed as never),
+      history: history.rows,
+    });
+  });
+
+  app.post("/api/v1/assessments", async (request, reply) => {
+    const schema = z.object({ entityId: z.string().uuid() });
+    try {
+      const body = schema.parse(request.body);
+      const assessment = await diagnostics.getOrCreateAssessment(body.entityId, request.auth.vertical);
+      return reply.status(201).send({ assessmentId: assessment.id, entityId: body.entityId, status: assessment.status });
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      throw err;
+    }
+  });
+}

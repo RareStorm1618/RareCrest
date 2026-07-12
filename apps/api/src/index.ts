@@ -22,6 +22,13 @@ import { registerAgentStudioRoutes } from "./routes/agent-studio-routes.js";
 import { registerMigrationWorkspaceRoutes } from "./routes/migration-workspace-routes.js";
 import { registerLegalRoutes } from "./routes/legal-routes.js";
 import { registerCommandRoutes } from "./routes/command-routes.js";
+import { registerAssessmentRoutes } from "./routes/assessment-routes.js";
+import { registerExportRoutes } from "./routes/export-routes.js";
+import { registerSkillCompanionRoutes } from "./routes/skill-companion-routes.js";
+import { registerSpecRoutes } from "./routes/spec-routes.js";
+import { registerGovernanceGatewayRoutes } from "./routes/governance-gateway-routes.js";
+import { registerEntityRegistryRoutes } from "./routes/entity-registry-routes.js";
+import { registerRuntimeRoutes } from "./routes/runtime-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { z } from "zod";
 
@@ -74,6 +81,13 @@ export async function buildApp() {
   registerMigrationWorkspaceRoutes(app, db);
   registerLegalRoutes(app, db);
   registerCommandRoutes(app, db);
+  registerAssessmentRoutes(app, db);
+  registerExportRoutes(app, db, intelligence);
+  registerSkillCompanionRoutes(app, db, intelligence);
+  registerSpecRoutes(app, db, governance);
+  registerGovernanceGatewayRoutes(app, governance, intelligence);
+  registerEntityRegistryRoutes(app, db);
+  registerRuntimeRoutes(app, db, intelligence);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

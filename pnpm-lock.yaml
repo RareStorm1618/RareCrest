@@ -35,6 +35,12 @@ importers:
       '@rarecrest/diagnostics':
         specifier: workspace:*
         version: link:../../packages/diagnostics
+      '@rarecrest/dual-track':
+        specifier: workspace:*
+        version: link:../../packages/dual-track
+      '@rarecrest/export':
+        specifier: workspace:*
+        version: link:../../packages/export
       '@rarecrest/governance-client':
         specifier: workspace:*
         version: link:../../packages/governance-client
@@ -47,9 +53,15 @@ importers:
       '@rarecrest/migration-workspace':
         specifier: workspace:*
         version: link:../../packages/migration-workspace
+      '@rarecrest/object-store':
+        specifier: workspace:*
+        version: link:../../packages/object-store
       '@rarecrest/portfolio':
         specifier: workspace:*
         version: link:../../packages/portfolio
+      '@rarecrest/runtime-control':
+        specifier: workspace:*
+        version: link:../../packages/runtime-control
       '@rarecrest/skill-companion':
         specifier: workspace:*
         version: link:../../packages/skill-companion
@@ -217,6 +229,28 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
 
+  packages/dual-track:
+    dependencies:
+      '@rarecrest/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
+  packages/export:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
   packages/governance-client:
     dependencies:
       '@rarecrest/contracts':
@@ -283,6 +317,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
 
+  packages/runtime-control:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(lightningcss@1.27.0)(terser@5.49.0)
+
   packages/skill-companion:
     dependencies:
       '@rarecrest/contracts':
@@ -332,6 +375,9 @@ importers:
       '@rarecrest/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rarecrest/runtime-control':
+        specifier: workspace:*
+        version: link:../../packages/runtime-control
       '@rarecrest/skill-companion':
         specifier: workspace:*
         version: link:../../packages/skill-companion

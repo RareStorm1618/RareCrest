@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-25
 
 **Work Order Number:** WO-25
-**Work Order Title:** WO-25 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:37Z
+**Work Order Title:** Implement AssessmentSequencer and ReadinessAssessment persistence
+**Initialized At (UTC):** 2026-07-12T01:20:06Z
 
 ## Phase 1: Start / Context Gathering
 

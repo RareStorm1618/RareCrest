@@ -1,17 +1,6 @@
 /** Diagnostics Suite domain logic — WO-31, WO-26 */
 
-export const ASSESSMENT_RUN_ORDER = [
-  "readiness_score",
-  "score_interpretation",
-  "maturity_ladder",
-  "dabbling_test",
-  "workforce_capacity",
-  "token_maxxing",
-  "governance_pillars",
-  "migration_gate",
-] as const;
-
-export type AssessmentStep = (typeof ASSESSMENT_RUN_ORDER)[number];
+export * from "./sequencer.js";
 
 export interface ReadinessDimension {
   id: string;
@@ -150,25 +139,6 @@ export function evaluateMigrationGate(gatingAnswers: Record<string, "green" | "y
   const gatingKeys = ["q5", "q6", "q7", "q8"];
   const haltReasons = gatingKeys.filter((k) => gatingAnswers[k] === "red");
   return { halted: haltReasons.length > 0, haltReasons };
-}
-
-export function stepIndex(step: AssessmentStep): number {
-  return ASSESSMENT_RUN_ORDER.indexOf(step);
-}
-
-export function isStepUnlocked(completedSteps: AssessmentStep[], target: AssessmentStep): boolean {
-  const targetIdx = stepIndex(target);
-  if (targetIdx <= 0) return true;
-  for (let i = 0; i < targetIdx; i++) {
-    if (!completedSteps.includes(ASSESSMENT_RUN_ORDER[i])) return false;
-  }
-  return true;
-}
-
-export function isRetakeDue(completedAt: string | null): boolean {
-  if (!completedAt) return false;
-  const sixMonthsMs = 183 * 24 * 60 * 60 * 1000;
-  return Date.now() - new Date(completedAt).getTime() > sixMonthsMs;
 }
 
 export * from "./migration.js";

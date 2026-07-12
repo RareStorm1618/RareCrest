@@ -2,8 +2,8 @@
 
 # Review Log: WO-28
 
-**Work Order:** WO-28 — WO-28 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:38Z
+**Work Order:** WO-28 — Implement SkillCompanion workflow surface (API + Client App)
+**Initialized At (UTC):** 2026-07-12T01:20:06Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: apps/api/src/routes/phase-routes.ts, apps/api/src/index.ts
+Files reviewed: apps/api/src/routes/skill-companion-routes.ts, apps/web/src/components/SkillCompanionView.tsx

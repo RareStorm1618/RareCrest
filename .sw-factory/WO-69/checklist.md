@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-69
 
 **Work Order Number:** WO-69
-**Work Order Title:** WO-69 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:56Z
+**Work Order Title:** Implement RuntimeEnforcementService and activation gate (Governance Engine)
+**Initialized At (UTC):** 2026-07-12T01:20:07Z
 
 ## Phase 1: Start / Context Gathering
 

@@ -3,8 +3,8 @@
 # Work Order Execution Checklist: WO-27
 
 **Work Order Number:** WO-27
-**Work Order Title:** WO-27 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:38Z
+**Work Order Title:** Implement ExportController for oversight packs and assessment summaries
+**Initialized At (UTC):** 2026-07-12T01:20:06Z
 
 ## Phase 1: Start / Context Gathering
 

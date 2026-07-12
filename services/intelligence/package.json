@@ -13,6 +13,7 @@
   "dependencies": {
     "@rarecrest/contracts": "workspace:*",
     "@rarecrest/skill-companion": "workspace:*",
+    "@rarecrest/runtime-control": "workspace:*",
     "@rarecrest/db": "workspace:*",
     "fastify": "^5.4.0"
   },

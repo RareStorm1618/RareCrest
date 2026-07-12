@@ -3,6 +3,7 @@ import type { ReadinessDimension } from "@rarecrest/diagnostics";
 import { TaskDecompositionPanel } from "./TaskDecompositionPanel.js";
 import { RegulatoryProfilePanel } from "./RegulatoryProfilePanel.js";
 import { AttentionFlagsPanel } from "./AttentionFlagsPanel.js";
+import { SkillCompanionView } from "./SkillCompanionView.js";
 
 interface DiagnosticsWorkspaceProps {
   entityId: string;
@@ -154,6 +155,7 @@ export function DiagnosticsWorkspace({
 
       <RegulatoryProfilePanel entityId={entityId} apiBase={apiBase} headers={headers} />
       <AttentionFlagsPanel entityId={entityId} apiBase={apiBase} headers={headers} />
+      <SkillCompanionView entityId={entityId} apiBase={apiBase} headers={headers} />
 
       <ol className="run-order">
         {state.runOrder.map((step) => (

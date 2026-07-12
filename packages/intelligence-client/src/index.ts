@@ -39,6 +39,8 @@ export class IntelligenceClient {
     vertical: string;
     question: string;
     context?: string[];
+    requestKind?: string;
+    entityContext?: Record<string, unknown> | null;
   }): Promise<Record<string, unknown>> {
     return this.post("/rpc/skill-companion/complete", input);
   }

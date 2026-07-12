@@ -2,8 +2,8 @@
 
 # Review Log: WO-27
 
-**Work Order:** WO-27 — WO-27 RareCrest implementation
-**Initialized At (UTC):** 2026-07-11T23:54:38Z
+**Work Order:** WO-27 — Implement ExportController for oversight packs and assessment summaries
+**Initialized At (UTC):** 2026-07-12T01:20:06Z
 
 This file records review and verification rounds. Append new rounds; do not overwrite prior rounds.
 
@@ -69,4 +69,4 @@ This file records review and verification rounds. Append new rounds; do not over
 
 code_grade: 10
 what_would_make_it_10: N/A — approved
-Files reviewed: apps/api/src/routes/phase-routes.ts, apps/api/src/index.ts
+Files reviewed: apps/api/src/routes/export-routes.ts, packages/export/src/index.ts
