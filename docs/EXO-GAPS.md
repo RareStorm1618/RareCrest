@@ -23,13 +23,16 @@ federation is ever needed, it needs its own trust model.
 
 ## Mobile
 
-`apps/mobile` (Expo/React Native) has one real screen: portfolio status + top attention items,
-read-only, polling the same `/api/v1/command/attention-queue` and portfolio-status endpoints the
-web app uses. Gaps: no push notifications (so "attention" on mobile means "open the app and
-pull-to-refresh," not an actual interrupt), no offline cache, no write actions (can't resolve a
-flag, seal a Parliament session, or run night-shift from the phone), no biometric/device-bound
-auth story beyond the same bearer token the web app uses, and no deep-linking into a specific
-entity's diagnostics/wiki/runtime tabs. It is a status-viewer, not an operating console.
+`apps/mobile` (Expo/React Native) is a **Director Console** (`docs/MOBILE-DIRECTOR.md`):
+pull-to-refresh Command dashboard, **resolve** attention flags, **seal** Parliament
+sessions ready for seal (`financial_release` → time-lock; others immediate), and
+**arm / trigger / disarm** kill switches with a required reason + confirm dialogs.
+Shared helpers: `apps/mobile/src/director-api.ts`.
+
+**Still gaps:** no push notifications, no offline cache, no biometric/device-bound
+auth beyond the same bearer (or dev headers) the web app uses, no deep-linking into
+entity wiki/runtime tabs, and no in-app execution of due time-lock seals (that stays
+on night-shift / ops).
 
 ## Provenance
 
