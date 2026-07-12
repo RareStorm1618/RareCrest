@@ -8,7 +8,7 @@ pub struct HardRuleEvaluator;
 
 impl HardRuleEvaluator {
     pub fn evaluate(request: &HardRuleCheckRequest) -> HardRuleVerdict {
-        let mut reasons: Vec<FieldError> = [];
+        let mut reasons: Vec<FieldError> = Vec::new();
 
         // Rule 1: Two-of-three rights — holding all three is structurally impossible
         if request.requested_rights.len() >= 3 {

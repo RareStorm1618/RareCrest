@@ -27,7 +27,7 @@ export class ObjectStoreClient {
         "Content-Type": contentType,
         Authorization: `AWS4-HMAC-SHA256 Credential=${this.config.accessKey}`,
       },
-      body,
+      body: new Uint8Array(body),
     });
     if (!response.ok) {
       if (this.config.strictMode) {

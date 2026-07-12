@@ -86,6 +86,7 @@ export class DecisionTraceService {
       hopecoin: "aml-7yr",
       rarestorm: "irs-7yr",
       healkids: "coppa-7yr",
+      holding: "standard-3yr",
     };
     return regimes[vertical] ?? "standard-3yr";
   }
