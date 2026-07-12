@@ -21,7 +21,7 @@ import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
 import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { deriveActivationControls, appendDenyTrace } from "../trust.js";
-import { assertLivePassport, requireHumanInstruction, PolicyGatewayError } from "../policy/index.js";
+import { assertLivePassport, assertShadowAllows, requireHumanInstruction, PolicyGatewayError } from "../policy/index.js";
 import { ParliamentError, ParliamentService, parliamentRequired } from "../services/parliament.js";
 
 const activationControlsSchema = z.object({
@@ -77,7 +77,8 @@ export function registerRuntimeRoutes(
         // Fail-closed: a live (hard-rule-clear, unexpired) agent passport is a
         // precondition for activation, independent of the activation-controls verdict.
         try {
-          await assertLivePassport(db, { entityId: body.entityId, agentId: body.agentId });
+          const passport = await assertLivePassport(db, { entityId: body.entityId, agentId: body.agentId });
+          assertShadowAllows(passport, "runtime_activation");
         } catch (passportErr) {
           if (passportErr instanceof PolicyGatewayError) {
             await appendDenyTrace(intelligence, {
@@ -236,7 +237,8 @@ export function registerRuntimeRoutes(
       // Fail-closed: rolling back to "running" requires a live passport plus the same
       // server-derived activation controls as fresh activation.
       try {
-        await assertLivePassport(db, { entityId: body.entityId, agentId: body.agentId });
+        const passport = await assertLivePassport(db, { entityId: body.entityId, agentId: body.agentId });
+        assertShadowAllows(passport, "runtime_activation");
       } catch (passportErr) {
         if (passportErr instanceof PolicyGatewayError) {
           await db.query(

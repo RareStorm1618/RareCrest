@@ -149,6 +149,7 @@ function mockOfficerDb(options: MockDbOptions = {}) {
               issuedPassportId: "passport-1",
               assignedBy: params?.[4],
               createdAt: new Date().toISOString(),
+              assignmentMode: (params?.[5] as string) ?? "live",
             },
           ],
         };
@@ -253,6 +254,29 @@ describe("POST /api/v1/runtime/officers/assign", () => {
     void calls;
     await app.close();
   });
+
+  it("issues a shadow officer passport with shadow constraints and assignment_mode", async () => {
+    const { db, calls } = mockOfficerDb();
+    const app = buildApp(DIRECTOR_AUTH, db, mockGovernance(), mockIntelligence());
+    await app.ready();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runtime/officers/assign",
+      payload: {
+        entityId: ENTITY_ID,
+        officerRole: "red_team",
+        agentId: "shadow-agent",
+        assignmentMode: "shadow",
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ assignmentMode: "shadow", agentId: "shadow-agent" });
+    const insertPassportCall = calls.find(([sql]) => sql.includes("INSERT INTO rarecrest.agent_passports"));
+    const constraintsJson = String(insertPassportCall?.[1]?.[7] ?? "");
+    expect(constraintsJson).toContain("shadow_officer_passport");
+    expect(constraintsJson).toContain("no_seal");
+    await app.close();
+  });
 });
 
 describe("POST /api/v1/runtime/officers/:assignmentId/deactivate", () => {
@@ -338,13 +362,14 @@ describe("assertLivePassport — requiredOfficerRole extension", () => {
   });
 
   it("accepts when requiredOfficerRole matches an active officer_assignments row", async () => {
-    const db = mockPassportAndOfficerDb([{ id: "assignment-1" }]);
+    const db = mockPassportAndOfficerDb([{ id: "assignment-1", assignment_mode: "live" }]);
     const result = await assertLivePassport(
       db,
       { entityId: ENTITY_ID, agentId: "agent-1" },
       { requiredOfficerRole: "chief_of_staff" },
     );
     expect(result.id).toBe("p1");
+    expect(result.assignmentMode).toBe("live");
   });
 
   it("still fails closed on passport expiry even when an officer role is required", async () => {

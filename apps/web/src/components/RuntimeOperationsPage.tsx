@@ -68,8 +68,10 @@ interface OfficerAssignmentRow {
   issuedPassportId: string | null;
   assignedBy: string;
   createdAt: string;
+  assignmentMode?: "live" | "shadow";
 }
 
+type AutopilotLevel = "off" | "observe" | "draft" | "propose";
 type KillSwitchAction = "arm" | "trigger" | "disarm";
 
 const ALL_AGENT_RIGHTS: AgentRight[] = ["sensitive_data", "code_execution", "external_comms"];
@@ -116,6 +118,10 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
   const [officerBusy, setOfficerBusy] = useState(false);
   const [officerError, setOfficerError] = useState<string | null>(null);
   const [officerStatus, setOfficerStatus] = useState<string | null>(null);
+  const [officerAssignmentMode, setOfficerAssignmentMode] = useState<"live" | "shadow">("live");
+  const [autopilotLevel, setAutopilotLevel] = useState<AutopilotLevel>("off");
+  const [autopilotBusy, setAutopilotBusy] = useState(false);
+  const [autopilotError, setAutopilotError] = useState<string | null>(null);
 
   const jsonHeaders = { ...headers, "Content-Type": "application/json" };
 
@@ -182,9 +188,10 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
 
   const loadOfficers = useCallback(async () => {
     try {
-      const [templatesRes, assignmentsRes] = await Promise.all([
+      const [templatesRes, assignmentsRes, autopilotRes] = await Promise.all([
         fetch(`${apiBase}/api/v1/runtime/officers/templates`, { headers }),
         fetch(`${apiBase}/api/v1/runtime/entities/${entityId}/officers`, { headers }),
+        fetch(`${apiBase}/api/v1/runtime/entities/${entityId}/autopilot`, { headers }),
       ]);
       if (templatesRes.status === 404 || assignmentsRes.status === 404) {
         setOfficerAssignmentsUnavailable(true);
@@ -197,6 +204,10 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
       if (assignmentsRes.ok) {
         const data = (await assignmentsRes.json()) as { assignments: OfficerAssignmentRow[] };
         setOfficerAssignments(data.assignments ?? []);
+      }
+      if (autopilotRes.ok) {
+        const data = (await autopilotRes.json()) as { level: AutopilotLevel };
+        setAutopilotLevel(data.level ?? "off");
       }
       setOfficerAssignmentsUnavailable(false);
     } catch {
@@ -234,6 +245,7 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
           officerRole,
           agentId: officerAgentId.trim(),
           requestedRights: officerRights,
+          assignmentMode: officerAssignmentMode,
         }),
       });
       if (res.status === 404) {
@@ -245,7 +257,9 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { message?: string }).message ?? "Officer assignment failed");
       }
-      setOfficerStatus(`Officer role ${officerRole} assigned to ${officerAgentId.trim()}`);
+      setOfficerStatus(
+        `Officer role ${officerRole} assigned to ${officerAgentId.trim()} (${officerAssignmentMode})`,
+      );
       setOfficerAgentId("");
       chooseOfficerRole("");
       await loadOfficers();
@@ -275,6 +289,28 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
       setOfficerError(err instanceof Error ? err.message : "Officer deactivation failed");
     } finally {
       setOfficerBusy(false);
+    }
+  };
+
+  const saveAutopilot = async (level: AutopilotLevel) => {
+    setAutopilotBusy(true);
+    setAutopilotError(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/runtime/entities/${entityId}/autopilot`, {
+        method: "PATCH",
+        headers: jsonHeaders,
+        body: JSON.stringify({ level }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? "Autopilot update failed");
+      }
+      const data = (await res.json()) as { level: AutopilotLevel };
+      setAutopilotLevel(data.level);
+    } catch (err) {
+      setAutopilotError(err instanceof Error ? err.message : "Autopilot update failed");
+    } finally {
+      setAutopilotBusy(false);
     }
   };
 
@@ -650,11 +686,34 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
         )}
       </div>
 
+      <div className="runtime-section" data-testid="autopilot-panel">
+        <h3>Autopilot</h3>
+        <p className="phi-note">
+          Entity autonomy ceiling for agents: observe → draft → propose. Never authorizes money, PHI,
+          seals, or kill-switch — those stay director/Parliament.
+        </p>
+        <label>
+          Level
+          <select
+            value={autopilotLevel}
+            onChange={(e) => void saveAutopilot(e.target.value as AutopilotLevel)}
+            disabled={autopilotBusy}
+          >
+            <option value="off">off</option>
+            <option value="observe">observe</option>
+            <option value="draft">draft</option>
+            <option value="propose">propose</option>
+          </select>
+        </label>
+        {autopilotError && <p className="error">{autopilotError}</p>}
+      </div>
+
       <div className="runtime-section" data-testid="officers-panel">
         <h3>Officer passports</h3>
         <p className="phi-note">
           Director-assigned officer roles — each role caps requestable rights at a pre-shaped
-          template ceiling, always within the two-of-three rights rule.
+          template ceiling, always within the two-of-three rights rule. Shadow officers may draft
+          and vote in Parliament but cannot seal, activate, or touch kill-switch.
         </p>
 
         {officerAssignmentsUnavailable ? (
@@ -672,6 +731,7 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
                     <span className={`status-pill ${assignment.active ? "status-running" : "status-halted"}`}>
                       {assignment.active ? "active" : "inactive"}
                     </span>
+                    <span className="status-pill">{assignment.assignmentMode ?? "live"}</span>
                     <small>assigned by {assignment.assignedBy}</small>
                     {assignment.active && (
                       <button type="button" onClick={() => deactivateOfficer(assignment.id)} disabled={officerBusy}>
@@ -696,6 +756,17 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
                     {role.replace(/_/g, " ")}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Assignment mode
+              <select
+                value={officerAssignmentMode}
+                onChange={(e) => setOfficerAssignmentMode(e.target.value as "live" | "shadow")}
+                disabled={officerBusy}
+              >
+                <option value="live">live</option>
+                <option value="shadow">shadow</option>
               </select>
             </label>
             <label>

@@ -9,6 +9,12 @@ import { isVerifiedDirector } from "../trust.js";
 import { readInternalServiceToken } from "../fortress.js";
 import { ParliamentError, ParliamentService, financialSealHours } from "../services/parliament.js";
 import { WikiService } from "../services/wiki.js";
+import {
+  assertAutopilotAllows,
+  assertLivePassport,
+  assertShadowAllows,
+  PolicyGatewayError,
+} from "../policy/index.js";
 
 const stakeClassSchema = z.enum(["wiki_promote", "financial_release", "activation", "doctrine"]);
 const voteSchema = z.enum(["aye", "nay", "abstain"]);
@@ -23,6 +29,9 @@ function mapErr(err: unknown, reply: { status: (n: number) => { send: (b: unknow
   if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
   if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
   if (err instanceof ParliamentError) return reply.status(err.statusCode).send({ message: err.message });
+  if (err instanceof PolicyGatewayError) {
+    return reply.status(err.statusCode).send({ message: err.message, code: err.code });
+  }
   throw err;
 }
 
@@ -119,6 +128,20 @@ export function registerParliamentRoutes(
       const body = schema.parse(request.body);
       const session = await parliament.getSession(id);
       await assertEntityAccess(db, session.entityId, request.auth);
+
+      // Directors may cast lens votes without an officer passport (solo fiduciary).
+      // Agents must hold an active officer assignment (live or shadow) and clear
+      // the entity autopilot ceiling for `propose`. Shadow may vote; cannot seal.
+      if (!isVerifiedDirector(request.auth, request.headers as Record<string, unknown>)) {
+        const passport = await assertLivePassport(
+          db,
+          { entityId: session.entityId, agentId: request.auth.userId },
+          { requiredOfficerRole: body.officerRole },
+        );
+        assertShadowAllows(passport, "parliament_vote");
+        await assertAutopilotAllows(db, session.entityId, "propose");
+      }
+
       const result = await parliament.castVote({
         sessionId: id,
         officerRole: body.officerRole,

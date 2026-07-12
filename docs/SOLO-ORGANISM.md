@@ -23,11 +23,31 @@ lone signature (even a director's) is not enough.
 | **Parliament + Seal** | The organism's *collective* decision layer: multi-officer, multi-stakeholder-lens deliberation gate in front of the actions above a single director's signature shouldn't carry alone. | This document, §"Parliament + Seal" |
 | North Star metrics | Durable, append-only mission events (`capital_routed_usd`, `healing_hours`, `families_supported`, `donation_pct_bps`) feeding a single `dualMissionScore`. | `apps/api/src/services/holding-metrics.ts`, `apps/api/src/routes/holding-metrics-routes.ts`, this document §"North Star metrics" |
 | AI spend ledger | Append-only, best-effort durable record of every model call's estimated token cost, independent of the in-memory per-vertical daily budget. | `rarecrest.ai_spend_ledger`, `services/intelligence/src/spend-ledger.ts`, `GET /api/v1/ops/ai-spend` |
+| **Autopilot + shadow officers** | Per-entity autonomy ceiling (`off`/`observe`/`draft`/`propose`) and shadow officer passports that may draft/vote but never seal, activate, or kill-switch. | `032_autopilot_shadow.sql`, `apps/api/src/routes/autopilot-routes.ts`, `docs/SOLO-ORGANISM.md` §Autopilot |
 
 Individually, each of these is a local reflex: a rights ceiling, a kill switch, a signed
 instruction. None of them requires more than one human to act. Parliament + Seal is what sits
 above them — it is where the organism deliberately slows itself down and asks more than one
 perspective before an action becomes irreversible.
+
+## Autopilot levels + shadow officers
+
+**Autopilot** is an entity-scoped ceiling for *agent* action classes — never for money, PHI,
+seals, or kill-switch (those stay director + Parliament):
+
+| Level | Agents may |
+| --- | --- |
+| `off` | Nothing autonomous (default) |
+| `observe` | Read / trace / metrics |
+| `draft` | Observe + draft wiki / skill-companion |
+| `propose` | Draft + cast Parliament votes / raise attention |
+
+Director sets via `PATCH /api/v1/runtime/entities/:entityId/autopilot`.
+
+**Shadow officer passports** (`assignmentMode: "shadow"` on assign) bake
+`SHADOW_OFFICER_CONSTRAINTS` into the passport. Shadow officers may draft and vote; they
+**cannot** seal, activate runtime to `running`, or arm/trigger/disarm kill-switch. Live
+assignments remain the default.
 
 ## Parliament + Seal
 

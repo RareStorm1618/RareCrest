@@ -1,6 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseClient } from "@rarecrest/db";
-import type { AgentRight, OfficerRole } from "@rarecrest/contracts";
+import type {
+  AgentRight,
+  AutopilotAction,
+  AutopilotLevel,
+  OfficerAssignmentMode,
+  OfficerRole,
+  ShadowForbiddenAction,
+} from "@rarecrest/contracts";
+import {
+  autopilotAllows,
+  isShadowPassport,
+  shadowAllowsAction,
+} from "@rarecrest/contracts";
 
 /**
  * Fail-closed gateway errors. Every check in this module throws on the
@@ -26,6 +38,8 @@ export interface LivePassport {
   riskTier: string;
   validUntil: string;
   hardRuleClear: boolean;
+  constraints: string[];
+  assignmentMode: OfficerAssignmentMode | null;
 }
 
 interface AgentPassportRow {
@@ -36,6 +50,7 @@ interface AgentPassportRow {
   risk_tier: string;
   valid_until: string;
   hard_rule_clear: boolean;
+  constraints: string[] | null;
 }
 
 export interface AssertLivePassportOptions {
@@ -43,14 +58,13 @@ export interface AssertLivePassportOptions {
    * When set, the caller is asserting that the agent must currently hold this
    * officer role for the entity — checked against a live (active) row in
    * rarecrest.officer_assignments, not merely a passport with matching rights.
-   * A passport can be live while an officer assignment behind it has since
-   * been deactivated/replaced; this closes that gap for officer-gated routes.
    */
   requiredOfficerRole?: OfficerRole;
 }
 
 interface OfficerAssignmentCheckRow {
   id: string;
+  assignment_mode: string;
 }
 
 /**
@@ -58,10 +72,6 @@ interface OfficerAssignmentCheckRow {
  * currently live: issued hard-rule-clear AND valid_until still in the future.
  * When `requiredOfficerRole` is set, also asserts an active officer_assignments
  * row exists for (entityId, agentId, officerRole) — fail-closed.
- *
- * Fail-closed: no passport, a non-clear passport, an expired passport, or (when
- * requested) a missing/inactive officer assignment all throw
- * PolicyGatewayError(403) — callers must never treat "no evidence" as "allowed".
  */
 export async function assertLivePassport(
   db: DatabaseClient,
@@ -69,7 +79,7 @@ export async function assertLivePassport(
   options: AssertLivePassportOptions = {},
 ): Promise<LivePassport> {
   const result = await db.query<AgentPassportRow>(
-    `SELECT id, agent_id, entity_id, rights, risk_tier, valid_until, hard_rule_clear
+    `SELECT id, agent_id, entity_id, rights, risk_tier, valid_until, hard_rule_clear, constraints
      FROM rarecrest.agent_passports
      WHERE entity_id = $1 AND agent_id = $2
      ORDER BY created_at DESC LIMIT 1`,
@@ -99,9 +109,10 @@ export async function assertLivePassport(
     );
   }
 
+  let assignmentMode: OfficerAssignmentMode | null = null;
   if (options.requiredOfficerRole) {
     const officerResult = await db.query<OfficerAssignmentCheckRow>(
-      `SELECT id FROM rarecrest.officer_assignments
+      `SELECT id, COALESCE(assignment_mode, 'live') AS assignment_mode FROM rarecrest.officer_assignments
        WHERE entity_id = $1 AND agent_id = $2 AND officer_role = $3 AND active = TRUE
        LIMIT 1`,
       [input.entityId, input.agentId, options.requiredOfficerRole],
@@ -113,7 +124,11 @@ export async function assertLivePassport(
         "OFFICER_ASSIGNMENT_MISSING",
       );
     }
+    const mode = officerResult.rows[0].assignment_mode;
+    assignmentMode = mode === "shadow" ? "shadow" : "live";
   }
+
+  const constraints = Array.isArray(row.constraints) ? row.constraints : [];
 
   return {
     id: row.id,
@@ -123,7 +138,63 @@ export async function assertLivePassport(
     riskTier: row.risk_tier,
     validUntil: row.valid_until,
     hardRuleClear: row.hard_rule_clear,
+    constraints,
+    assignmentMode,
   };
+}
+
+/** Fail-closed: shadow passports cannot seal, kill-switch, activate, or execute finance. */
+export function assertShadowAllows(
+  passport: Pick<LivePassport, "constraints" | "assignmentMode">,
+  action: ShadowForbiddenAction | "parliament_vote" | "draft",
+): void {
+  const constraints =
+    passport.assignmentMode === "shadow" && !isShadowPassport(passport.constraints)
+      ? [...passport.constraints, "shadow_officer_passport"]
+      : passport.constraints;
+  if (!shadowAllowsAction(constraints, action)) {
+    throw new PolicyGatewayError(
+      `Shadow officer passport cannot perform action=${action}`,
+      403,
+      "SHADOW_ACTION_DENIED",
+    );
+  }
+}
+
+export async function loadEntityAutopilotLevel(
+  db: DatabaseClient,
+  entityId: string,
+): Promise<AutopilotLevel> {
+  try {
+    const result = await db.query<{ autopilot_level: string }>(
+      `SELECT autopilot_level FROM rarecrest.entities WHERE id = $1 AND deleted_at IS NULL`,
+      [entityId],
+    );
+    const level = result.rows[0]?.autopilot_level;
+    if (level === "observe" || level === "draft" || level === "propose" || level === "off") {
+      return level;
+    }
+    return "off";
+  } catch {
+    return "off";
+  }
+}
+
+/** Fail-closed autopilot ceiling for agent action classes (never money/PHI/seal). */
+export async function assertAutopilotAllows(
+  db: DatabaseClient,
+  entityId: string,
+  action: AutopilotAction,
+): Promise<AutopilotLevel> {
+  const level = await loadEntityAutopilotLevel(db, entityId);
+  if (!autopilotAllows(level, action)) {
+    throw new PolicyGatewayError(
+      `Autopilot level=${level} does not allow action=${action} (raise ceiling via director PATCH)`,
+      403,
+      "AUTOPILOT_CEILING",
+    );
+  }
+  return level;
 }
 
 export interface LiveHumanInstruction {
@@ -150,9 +221,6 @@ interface HumanInstructionRow {
 /**
  * Verifies a human_instructions row exists, is not revoked, is not expired,
  * and belongs to the entity the caller claims to be acting on.
- *
- * Fail-closed: missing id, entity mismatch, revocation, or expiry all throw
- * PolicyGatewayError(403).
  */
 export async function requireHumanInstruction(
   db: DatabaseClient,

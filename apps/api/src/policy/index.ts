@@ -1,5 +1,8 @@
 export {
   assertLivePassport,
+  assertShadowAllows,
+  assertAutopilotAllows,
+  loadEntityAutopilotLevel,
   requireHumanInstruction,
   attachCorrelationId,
   PolicyGatewayError,

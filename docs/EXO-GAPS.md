@@ -71,3 +71,6 @@ hash + storage is the attestation today.
   (matching the rest of RareCrest's audit posture), but there is no "supersede" or "correction"
   event type yet — a bad entry today can only be offset by a new event, not marked as corrected
   in a way the North Star aggregate understands specially.
+- **Autopilot does not self-schedule agent work.** Raising `autopilot_level` to `propose` unlocks
+  agent votes/drafts under policy gates; it does not spawn durable worker loops or vertical
+  autopilot modes beyond what night-shift already runs.

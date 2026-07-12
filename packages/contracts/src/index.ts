@@ -315,6 +315,69 @@ export function assertRightsWithinOfficerTemplate(role: OfficerRole, rights: Age
   }
 }
 
+/** S4 Autopilot — entity autonomy ceiling. Never authorizes money/PHI/irreversible execution. */
+export type AutopilotLevel = "off" | "observe" | "draft" | "propose";
+
+export type OfficerAssignmentMode = "live" | "shadow";
+
+/** Actions agents may attempt under autopilot; consequential acts stay human/director. */
+export type AutopilotAction = "observe" | "draft" | "propose";
+
+export const AUTOPILOT_LEVELS: AutopilotLevel[] = ["off", "observe", "draft", "propose"];
+
+/** Minimum autopilot level required for each agent action class. */
+export const AUTOPILOT_ACTION_FLOOR: Record<AutopilotAction, AutopilotLevel> = {
+  observe: "observe",
+  draft: "draft",
+  propose: "propose",
+};
+
+const AUTOPILOT_RANK: Record<AutopilotLevel, number> = {
+  off: 0,
+  observe: 1,
+  draft: 2,
+  propose: 3,
+};
+
+export function autopilotAllows(level: AutopilotLevel, action: AutopilotAction): boolean {
+  return AUTOPILOT_RANK[level] >= AUTOPILOT_RANK[AUTOPILOT_ACTION_FLOOR[action]];
+}
+
+/** Constraints baked into shadow officer passports at issuance (operational, not hard-rule denials). */
+export const SHADOW_OFFICER_CONSTRAINTS = [
+  "shadow_officer_passport",
+  "no_seal",
+  "no_kill_switch",
+  "no_financial_execute",
+  "no_runtime_activation",
+] as const;
+
+export type ShadowOfficerConstraint = (typeof SHADOW_OFFICER_CONSTRAINTS)[number];
+
+export const SHADOW_FORBIDDEN_ACTIONS = [
+  "seal",
+  "kill_switch_arm",
+  "kill_switch_trigger",
+  "kill_switch_disarm",
+  "runtime_activation",
+  "financial_execute",
+] as const;
+
+export type ShadowForbiddenAction = (typeof SHADOW_FORBIDDEN_ACTIONS)[number];
+
+export function isShadowPassport(constraints: string[] | null | undefined): boolean {
+  return Array.isArray(constraints) && constraints.includes("shadow_officer_passport");
+}
+
+export function shadowAllowsAction(
+  constraints: string[] | null | undefined,
+  action: ShadowForbiddenAction | "parliament_vote" | "draft",
+): boolean {
+  if (!isShadowPassport(constraints)) return true;
+  if (action === "parliament_vote" || action === "draft") return true;
+  return !(SHADOW_FORBIDDEN_ACTIONS as readonly string[]).includes(action);
+}
+
 export interface ValidationErrorResponse {
   errors: FieldError[];
   message: string;

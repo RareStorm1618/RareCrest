@@ -4,6 +4,7 @@ import type { GovernanceClient } from "@rarecrest/governance-client";
 import type { IntelligenceClient } from "@rarecrest/intelligence-client";
 import {
   OFFICER_ROLE_TEMPLATES,
+  SHADOW_OFFICER_CONSTRAINTS,
   assertRightsWithinOfficerTemplate,
   OfficerTemplateViolationError,
   type AgentRight,
@@ -66,6 +67,7 @@ interface OfficerAssignmentRow {
   issuedPassportId: string | null;
   assignedBy: string;
   createdAt: string;
+  assignmentMode: "live" | "shadow";
 }
 
 export function registerOfficerRoutes(
@@ -85,7 +87,7 @@ export function registerOfficerRoutes(
       const result = await db.query<OfficerAssignmentRow>(
         `SELECT id, entity_id AS "entityId", officer_role AS "officerRole", agent_id AS "agentId",
                 active, issued_passport_id AS "issuedPassportId", assigned_by AS "assignedBy",
-                created_at AS "createdAt"
+                created_at AS "createdAt", COALESCE(assignment_mode, 'live') AS "assignmentMode"
          FROM rarecrest.officer_assignments
          WHERE entity_id = $1
          ORDER BY active DESC, created_at DESC`,
@@ -104,6 +106,7 @@ export function registerOfficerRoutes(
       officerRole: z.enum(OFFICER_ROLES),
       agentId: z.string().min(1),
       requestedRights: z.array(z.enum(["sensitive_data", "code_execution", "external_comms"])).optional(),
+      assignmentMode: z.enum(["live", "shadow"]).default("live"),
     });
     try {
       const body = schema.parse(request.body);
@@ -180,6 +183,11 @@ export function registerOfficerRoutes(
         });
       }
 
+      const constraints =
+        body.assignmentMode === "shadow"
+          ? [...passport.constraints, ...SHADOW_OFFICER_CONSTRAINTS]
+          : passport.constraints;
+
       const passportRow = await db.query<{ id: string }>(
         `INSERT INTO rarecrest.agent_passports
           (agent_id, entity_id, rights, risk_tier, valid_until, issued_by, hard_rule_clear, constraints)
@@ -193,14 +201,11 @@ export function registerOfficerRoutes(
           passport.validUntil,
           passport.issuedBy,
           true,
-          JSON.stringify(passport.constraints),
+          JSON.stringify(constraints),
         ],
       );
       const passportId = passportRow.rows[0].id;
 
-      // Deactivate any prior active assignment for this (entity, role) before
-      // inserting the new one — the partial unique index is the backstop, this
-      // explicit deactivate is what keeps the replace semantics observable.
       await db.query(
         `UPDATE rarecrest.officer_assignments SET active = FALSE
          WHERE entity_id = $1 AND officer_role = $2 AND active = TRUE`,
@@ -209,12 +214,19 @@ export function registerOfficerRoutes(
 
       const inserted = await db.query<OfficerAssignmentRow>(
         `INSERT INTO rarecrest.officer_assignments
-          (entity_id, officer_role, agent_id, active, issued_passport_id, assigned_by)
-         VALUES ($1, $2, $3, TRUE, $4, $5)
+          (entity_id, officer_role, agent_id, active, issued_passport_id, assigned_by, assignment_mode)
+         VALUES ($1, $2, $3, TRUE, $4, $5, $6)
          RETURNING id, entity_id AS "entityId", officer_role AS "officerRole", agent_id AS "agentId",
                    active, issued_passport_id AS "issuedPassportId", assigned_by AS "assignedBy",
-                   created_at AS "createdAt"`,
-        [body.entityId, body.officerRole, body.agentId, passportId, request.auth.userId],
+                   created_at AS "createdAt", COALESCE(assignment_mode, 'live') AS "assignmentMode"`,
+        [
+          body.entityId,
+          body.officerRole,
+          body.agentId,
+          passportId,
+          request.auth.userId,
+          body.assignmentMode,
+        ],
       );
 
       await intelligence.appendTrace({
@@ -222,7 +234,12 @@ export function registerOfficerRoutes(
         vertical: request.auth.vertical,
         action: "officer_assignment",
         verdict: "allow",
-        payload: { officerRole: body.officerRole, agentId: body.agentId, passportId },
+        payload: {
+          officerRole: body.officerRole,
+          agentId: body.agentId,
+          passportId,
+          assignmentMode: body.assignmentMode,
+        },
       });
 
       return reply.status(201).send(inserted.rows[0]);
@@ -250,7 +267,7 @@ export function registerOfficerRoutes(
          WHERE id = $1
          RETURNING id, entity_id AS "entityId", officer_role AS "officerRole", agent_id AS "agentId",
                    active, issued_passport_id AS "issuedPassportId", assigned_by AS "assignedBy",
-                   created_at AS "createdAt"`,
+                   created_at AS "createdAt", COALESCE(assignment_mode, 'live') AS "assignmentMode"`,
         [assignmentId],
       );
       return reply.send(result.rows[0]);
