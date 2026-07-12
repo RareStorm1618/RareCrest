@@ -14,6 +14,9 @@ export const createEntitySchema = z.object({
   name: z.string().min(1).max(255),
   vertical: verticalSchema,
   tenancyKey: z.string().min(1).max(255),
+  entityType: z
+    .enum(["nonprofit", "for_profit_platform", "fund", "token_protocol", "holding"])
+    .default("nonprofit"),
   mode: z.string().min(1).max(50).default("assessment"),
   band: z.string().min(1).max(50).default("unknown"),
 });

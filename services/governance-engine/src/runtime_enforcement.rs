@@ -53,3 +53,38 @@ impl RuntimeEnforcementService {
         HardRuleEvaluator::evaluate(request)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn full_controls() -> ActivationRequest {
+        ActivationRequest {
+            agent_id: "a1".into(),
+            entity_id: "e1".into(),
+            hard_rule_clear: true,
+            envelope_enforceable: true,
+            evaluation_suite_registered: true,
+            kill_switches_live: true,
+            human_review_routing_live: true,
+        }
+    }
+
+    #[test]
+    fn permits_activation_when_all_controls_live() {
+        let v = RuntimeEnforcementService::evaluate_activation(&full_controls());
+        assert!(v.permitted);
+        assert!(v.missing_controls.is_empty());
+    }
+
+    #[test]
+    fn blocks_activation_and_lists_missing_controls() {
+        let mut req = full_controls();
+        req.kill_switches_live = false;
+        req.human_review_routing_live = false;
+        let v = RuntimeEnforcementService::evaluate_activation(&req);
+        assert!(!v.permitted);
+        assert!(v.missing_controls.contains(&"kill_switches".to_string()));
+        assert!(v.missing_controls.contains(&"human_review_routing".to_string()));
+    }
+}

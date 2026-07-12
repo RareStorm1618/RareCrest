@@ -59,6 +59,21 @@ export interface HardRuleVerdict {
   evaluatedAt: string;
 }
 
+export interface ActivationRequest {
+  agentId: string;
+  entityId: string;
+  hardRuleClear: boolean;
+  envelopeEnforceable: boolean;
+  evaluationSuiteRegistered: boolean;
+  killSwitchesLive: boolean;
+  humanReviewRoutingLive: boolean;
+}
+
+export interface ActivationVerdict {
+  permitted: boolean;
+  missingControls: string[];
+}
+
 export interface DecisionTraceEntry {
   id: string;
   entityId: string;

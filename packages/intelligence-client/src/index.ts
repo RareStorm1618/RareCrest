@@ -45,6 +45,17 @@ export class IntelligenceClient {
     return this.post("/rpc/skill-companion/complete", input);
   }
 
+  async runEvaluation(input: {
+    agentId: string;
+    entityId: string;
+    accuracy: number;
+    overrideRate: number;
+    accuracyFloor?: number;
+    overrideCeiling?: number;
+  }): Promise<Record<string, unknown>> {
+    return this.post("/rpc/evaluation/run", input);
+  }
+
   async healthCheck(): Promise<boolean> {
     try {
       const r = await fetch(`${this.baseUrl}/health`);

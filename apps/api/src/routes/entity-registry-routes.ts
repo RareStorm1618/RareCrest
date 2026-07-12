@@ -21,11 +21,13 @@ export function registerEntityRegistryRoutes(app: FastifyInstance, db: DatabaseC
   app.delete("/api/v1/entities/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     enforceTenancy(request.auth, request.auth.vertical);
-    await db.query(
+    const result = await db.query(
       `UPDATE rarecrest.entities SET deleted_at = NOW(), updated_at = NOW()
-       WHERE id = $1 AND vertical = $2 AND deleted_at IS NULL`,
+       WHERE id = $1 AND vertical = $2 AND deleted_at IS NULL
+       RETURNING id`,
       [id, request.auth.vertical],
     );
+    if (result.rows.length === 0) return reply.status(404).send({ message: "Entity not found" });
     return reply.status(204).send();
   });
 }

@@ -59,3 +59,6 @@ export function defaultSlaTargetHours(category: ReviewCategory): number {
 export function isSlaBreached(slaTargetAt: string): boolean {
   return new Date(slaTargetAt).getTime() < Date.now();
 }
+
+export * from "./human-review.js";
+export * from "./version-history.js";

@@ -4,6 +4,7 @@ import { DatabaseClient } from "@rarecrest/db";
 import { GovernanceClient } from "@rarecrest/governance-client";
 import { IntelligenceClient } from "@rarecrest/intelligence-client";
 import { extractAuth, enforceTenancy, AuthError, TenancyViolationError } from "./auth.js";
+import { mapRouteError } from "./errors.js";
 import {
   createEntitySchema,
   hardRuleCheckSchema,
@@ -30,6 +31,7 @@ import { registerGovernanceGatewayRoutes } from "./routes/governance-gateway-rou
 import { registerEntityRegistryRoutes } from "./routes/entity-registry-routes.js";
 import { registerRuntimeRoutes } from "./routes/runtime-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
+import { mapEntityRow } from "./services/portfolio.js";
 import { z } from "zod";
 
 const PORT = Number(process.env.API_PORT ?? 3000);
@@ -69,8 +71,10 @@ export async function buildApp() {
     };
   });
 
+  const portfolio = new PortfolioService(db);
+
   registerPhaseRoutes(app, db, governance, intelligence);
-  registerPortfolioRoutes(app, new PortfolioService(db));
+  registerPortfolioRoutes(app, portfolio);
   registerDiagnosticsRoutes(app, db);
   registerMigrationRoutes(app, db);
   registerTaskDecompositionRoutes(app, db);
@@ -87,43 +91,39 @@ export async function buildApp() {
   registerSpecRoutes(app, db, governance);
   registerGovernanceGatewayRoutes(app, governance, intelligence);
   registerEntityRegistryRoutes(app, db);
-  registerRuntimeRoutes(app, db, intelligence);
+  registerRuntimeRoutes(app, db, intelligence, governance);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {
       const body = validate(createEntitySchema, request.body);
       enforceTenancy(request.auth, body.vertical);
-
-      const result = await db.query(
-        `INSERT INTO rarecrest.entities (name, vertical, tenancy_key, mode, band)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, name, vertical, tenancy_key AS "tenancyKey", mode, band,
-                   created_at AS "createdAt", updated_at AS "updatedAt", deleted_at AS "deletedAt"`,
-        [body.name, body.vertical, body.tenancyKey, body.mode, body.band],
-      );
-      return reply.status(201).send(result.rows[0]);
+      reply.header("Deprecation", "true");
+      reply.header("Link", '</api/v1/portfolio/entities>; rel="successor-version"');
+      const row = await portfolio.registerEntity({
+        name: body.name,
+        vertical: body.vertical,
+        tenancyKey: body.tenancyKey,
+        entityType: body.entityType ?? "nonprofit",
+        mode: body.mode,
+        band: body.band,
+      });
+      return reply.status(201).send(mapEntityRow(row));
     } catch (err) {
       if (err instanceof z.ZodError) {
         return reply.status(400).send(formatZodErrors(err));
       }
-      if (err instanceof AuthError || err instanceof TenancyViolationError) {
-        return reply.status(403).send({ message: (err as Error).message });
-      }
+      const mapped = mapRouteError(err);
+      if (mapped) return reply.status(mapped.status).send(mapped.body);
       throw err;
     }
   });
 
   app.get("/api/v1/entities", async (request, reply) => {
     enforceTenancy(request.auth, request.auth.vertical);
-    const result = await db.query(
-      `SELECT id, name, vertical, tenancy_key AS "tenancyKey", mode, band,
-              created_at AS "createdAt", updated_at AS "updatedAt", deleted_at AS "deletedAt"
-       FROM rarecrest.entities
-       WHERE vertical = $1 AND deleted_at IS NULL
-       ORDER BY created_at DESC`,
-      [request.auth.vertical],
-    );
-    return reply.send(result.rows);
+    reply.header("Deprecation", "true");
+    reply.header("Link", '</api/v1/portfolio/status>; rel="successor-version"');
+    const rollup = await portfolio.getRollup(request.auth.vertical);
+    return reply.send(rollup.entities);
   });
 
   app.post("/api/v1/governance/hard-rule-check", async (request, reply) => {
@@ -144,6 +144,10 @@ export async function buildApp() {
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    const mapped = mapRouteError(error);
+    if (mapped) {
+      return reply.status(mapped.status).send(mapped.body);
+    }
     app.log.error(error);
     reply.status(500).send({ message: "Internal server error" });
   });

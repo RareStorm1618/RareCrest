@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { DatabaseClient } from "@rarecrest/db";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
-import { DiagnosticsService } from "../services/diagnostics.js";
+import { DiagnosticsService, StepLockedError } from "../services/diagnostics.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 import { ASSESSMENT_RUN_ORDER } from "@rarecrest/diagnostics";
 
 const stepSchema = z.enum(ASSESSMENT_RUN_ORDER);
@@ -12,9 +13,15 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, db: DatabaseClie
 
   app.get("/api/v1/diagnostics/:entityId", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const assessment = await diagnostics.getOrCreateAssessment(entityId, request.auth.vertical);
-    const latestComplete = await diagnostics.getLatestComplete(entityId);
-    return reply.send(diagnostics.buildWorkspaceState(assessment, latestComplete));
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const assessment = await diagnostics.getOrCreateAssessment(entityId, request.auth.vertical);
+      const latestComplete = await diagnostics.getLatestComplete(entityId);
+      return reply.send(diagnostics.buildWorkspaceState(assessment, latestComplete));
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 
   app.patch("/api/v1/diagnostics/:entityId/responses", async (request, reply) => {
@@ -26,6 +33,7 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, db: DatabaseClie
     });
     try {
       const body = schema.parse(request.body);
+      await assertEntityAccess(db, entityId, request.auth);
       const assessment = await diagnostics.getOrCreateAssessment(entityId, request.auth.vertical);
       if (assessment.id !== body.assessmentId) {
         return reply.status(400).send({ message: "Assessment ID mismatch" });
@@ -35,6 +43,7 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, db: DatabaseClie
       return reply.send(diagnostics.buildWorkspaceState(updated, latestComplete));
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
@@ -48,6 +57,7 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, db: DatabaseClie
     try {
       const body = schema.parse(request.body);
       const parsedStep = stepSchema.parse(step);
+      await assertEntityAccess(db, entityId, request.auth);
       const assessment = await diagnostics.getOrCreateAssessment(entityId, request.auth.vertical);
       if (assessment.id !== body.assessmentId) {
         return reply.status(400).send({ message: "Assessment ID mismatch" });
@@ -60,22 +70,30 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, db: DatabaseClie
       return reply.send(diagnostics.buildWorkspaceState(updated, latestComplete));
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof StepLockedError) return reply.status(400).send({ message: err.message, field: "step", code: "STEP_LOCKED" });
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
 
   app.get("/api/v1/diagnostics/:entityId/history", async (request, reply) => {
     const { entityId } = request.params as { entityId: string };
-    const history = await diagnostics.getHistory(entityId);
-    return reply.send({
-      history: history.map((h) => ({
-        id: h.id,
-        completedAt: h.completedAt,
-        readinessTotal: h.readinessTotal,
-        readinessBand: h.readinessBand,
-        retakeDue: isRetakeDue(h.completedAt),
-      })),
-    });
+    try {
+      await assertEntityAccess(db, entityId, request.auth);
+      const history = await diagnostics.getHistory(entityId);
+      return reply.send({
+        history: history.map((h) => ({
+          id: h.id,
+          completedAt: h.completedAt,
+          readinessTotal: h.readinessTotal,
+          readinessBand: h.readinessBand,
+          retakeDue: isRetakeDue(h.completedAt),
+        })),
+      });
+    } catch (err) {
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
+      throw err;
+    }
   });
 }
 

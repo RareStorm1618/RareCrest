@@ -3,7 +3,7 @@ import { DatabaseClient } from "@rarecrest/db";
 import { ModelRouter } from "./model-router.js";
 import { DecisionTraceService } from "./decision-trace.js";
 import { SkillCompanionService } from "./skill-companion.js";
-import { runEvaluation } from "./evaluation-runner.js";
+import { runEvaluation, persistEvaluationRun } from "./evaluation-runner.js";
 import type { VerticalKey } from "@rarecrest/contracts";
 
 const PORT = Number(process.env.INTELLIGENCE_PORT ?? 3002);
@@ -89,15 +89,17 @@ export async function buildIntelligenceApp() {
   app.post<{ Body: { agentId: string; entityId: string; accuracy: number; overrideRate: number; accuracyFloor?: number; overrideCeiling?: number } }>(
     "/rpc/evaluation/run",
     async (request, reply) => {
-      const result = runEvaluation({
+      const input = {
         agentId: request.body.agentId,
         entityId: request.body.entityId,
         accuracy: request.body.accuracy,
         overrideRate: request.body.overrideRate,
         accuracyFloor: request.body.accuracyFloor ?? 0.85,
         overrideCeiling: request.body.overrideCeiling ?? 0.15,
-      });
-      return reply.send(result);
+      };
+      const result = runEvaluation(input);
+      const persisted = await persistEvaluationRun(db, input, result);
+      return reply.send(persisted);
     },
   );
 

@@ -55,6 +55,17 @@ function mapRow(row: Record<string, unknown>): AssessmentRecord {
 export class DiagnosticsService {
   constructor(private db: DatabaseClient) {}
 
+  async assertEntityForAssessment(entityId: string, vertical: VerticalKey): Promise<void> {
+    const entity = await this.db.query(
+      `SELECT vertical FROM rarecrest.entities WHERE id = $1 AND deleted_at IS NULL`,
+      [entityId],
+    );
+    if (entity.rows.length === 0) throw new Error("Entity not found");
+    if ((entity.rows[0].vertical as VerticalKey) !== vertical) {
+      throw new Error("Cross-vertical access denied");
+    }
+  }
+
   async getOrCreateAssessment(entityId: string, vertical: VerticalKey): Promise<AssessmentRecord> {
     const existing = await this.db.query(
       `SELECT * FROM rarecrest.readiness_assessments
@@ -159,6 +170,14 @@ export class DiagnosticsService {
   }
 
   async completeStep(assessmentId: string, step: AssessmentStep, stepData: Record<string, unknown>) {
+    const current = await this.db.query(`SELECT * FROM rarecrest.readiness_assessments WHERE id = $1`, [assessmentId]);
+    if (current.rows.length === 0) throw new Error("Assessment not found");
+    const prior = mapRow(current.rows[0]);
+    const priorCompleted = (prior.responses.completedSteps as AssessmentStep[]) ?? [];
+    if (!isStepUnlocked(priorCompleted, step)) {
+      throw new StepLockedError(step);
+    }
+
     const assessment = await this.saveResponses(assessmentId, stepData);
     const responses = { ...assessment.responses, ...stepData };
     const completedSteps = [...((responses.completedSteps as AssessmentStep[]) ?? [])];
@@ -209,6 +228,37 @@ export class DiagnosticsService {
         assessmentId,
       ],
     );
-    return mapRow(result.rows[0]);
+    const completed = mapRow(result.rows[0]);
+    if (allDone) {
+      await this.syncEntityFromAssessment(completed);
+    }
+    return completed;
+  }
+
+  private async syncEntityFromAssessment(assessment: AssessmentRecord): Promise<void> {
+    const governanceStatus =
+      assessment.deploymentLocked ? "blocked" : assessment.migrationHalted ? "hard_rule_exception" : "clear";
+    await this.db.query(
+      `UPDATE rarecrest.entities SET
+         band = COALESCE($2, band),
+         maturity_level = COALESCE($3, maturity_level),
+         governance_status = $4,
+         assessed_at = NOW(),
+         updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [
+        assessment.entityId,
+        assessment.readinessBand,
+        assessment.maturityLevel,
+        governanceStatus,
+      ],
+    );
+  }
+}
+
+export class StepLockedError extends Error {
+  constructor(public readonly step: AssessmentStep) {
+    super(`Step locked: complete prior steps before ${step}`);
+    this.name = "StepLockedError";
   }
 }

@@ -23,4 +23,14 @@ describe("SpecValidationService (WO-29)", () => {
     ]);
     expect(merged.deployable).toBe(false);
   });
+
+  it("requires agent_blueprint agentId", () => {
+    const r = validateStructuredDocument({
+      docType: "agent_blueprint",
+      narrative: "Purpose",
+      schemaPayload: { name: "Agent A" },
+    });
+    expect(r.deployable).toBe(false);
+    expect(r.errors.some((e) => e.field === "agentId")).toBe(true);
+  });
 });

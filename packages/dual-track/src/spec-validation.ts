@@ -26,6 +26,12 @@ export function validateStructuredDocument(input: StructuredDocumentInput): Vali
   if (input.requestedRights && input.requestedRights.length > 2) {
     errors.push({ field: "requestedRights", code: "MAX_TWO_RIGHTS", message: "At most 2 rights allowed" });
   }
+  if (input.docType === "agent_blueprint" && !input.schemaPayload.agentId) {
+    errors.push({ field: "agentId", code: "REQUIRED", message: "agentId required for agent_blueprint" });
+  }
+  if (input.docType === "workflow_spec" && !input.schemaPayload.workflowId) {
+    errors.push({ field: "workflowId", code: "REQUIRED", message: "workflowId required for workflow_spec" });
+  }
   const deployable = errors.length === 0;
   return { valid: deployable, deployable, errors };
 }

@@ -1,4 +1,4 @@
-import type { HardRuleCheckRequest, HardRuleVerdict } from "@rarecrest/contracts";
+import type { HardRuleCheckRequest, HardRuleVerdict, ActivationRequest, ActivationVerdict } from "@rarecrest/contracts";
 
 export interface GovernanceClientConfig {
   baseUrl: string;
@@ -28,6 +28,25 @@ export class GovernanceClient {
         throw new GovernanceRpcError(`Governance RPC failed: ${response.status}`, response.status);
       }
       return (await response.json()) as HardRuleVerdict;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async evaluateActivation(request: ActivationRequest): Promise<ActivationVerdict> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await fetch(`${this.baseUrl}/rpc/runtime/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new GovernanceRpcError(`Governance activation RPC failed: ${response.status}`, response.status);
+      }
+      return (await response.json()) as ActivationVerdict;
     } finally {
       clearTimeout(timeout);
     }

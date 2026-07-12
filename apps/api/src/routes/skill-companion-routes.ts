@@ -3,6 +3,7 @@ import type { IntelligenceClient } from "@rarecrest/intelligence-client";
 import type { DatabaseClient } from "@rarecrest/db";
 import { z } from "zod";
 import { formatZodErrors } from "../validation.js";
+import { assertEntityAccess, EntityAccessError } from "../tenancy.js";
 
 export function registerSkillCompanionRoutes(
   app: FastifyInstance,
@@ -18,16 +19,12 @@ export function registerSkillCompanionRoutes(
     });
     try {
       const body = schema.parse(request.body);
-      const entity = await db.query(
-        `SELECT id, entity_type, vertical, regulatory_regimes FROM rarecrest.entities WHERE id = $1`,
-        [body.entityId],
-      );
+      const entity = await assertEntityAccess(db, body.entityId, request.auth);
       const assessment = await db.query(
         `SELECT readiness_band, maturity_level, status FROM rarecrest.readiness_assessments
          WHERE entity_id = $1 ORDER BY updated_at DESC LIMIT 1`,
         [body.entityId],
       );
-      const e = entity.rows[0];
       const a = assessment.rows[0];
       const result = await intelligence.skillCompanionComplete({
         entityId: body.entityId,
@@ -35,22 +32,29 @@ export function registerSkillCompanionRoutes(
         question: body.question,
         context: body.context,
         requestKind: body.requestKind,
-        entityContext: e
-          ? {
-              entityId: body.entityId,
-              entityType: e.entity_type as string | null,
-              vertical: e.vertical as string,
-              regulatoryRegimes: (e.regulatory_regimes as string[]) ?? [],
-              readinessBand: (a?.readiness_band as string) ?? null,
-              maturityLevel: (a?.maturity_level as number) ?? null,
-              migrationMode: null,
-              diagnosticsComplete: a?.status === "complete",
-            }
-          : null,
+        entityContext: {
+          entityId: body.entityId,
+          entityType: null,
+          vertical: entity.vertical,
+          regulatoryRegimes: [],
+          readinessBand: (a?.readiness_band as string) ?? null,
+          maturityLevel: (a?.maturity_level as number) ?? null,
+          migrationMode: null,
+          diagnosticsComplete: a?.status === "complete",
+        },
       });
+      const guard = result.guard as { allowed?: boolean; redirectTo?: string; reason?: string } | undefined;
+      if (guard && guard.allowed === false) {
+        return reply.status(403).send({
+          message: guard.reason ?? "Request blocked by framing guard",
+          redirectTo: guard.redirectTo,
+          guard,
+        });
+      }
       return reply.send(result);
     } catch (err) {
       if (err instanceof z.ZodError) return reply.status(400).send(formatZodErrors(err));
+      if (err instanceof EntityAccessError) return reply.status(err.statusCode).send({ message: err.message });
       throw err;
     }
   });
