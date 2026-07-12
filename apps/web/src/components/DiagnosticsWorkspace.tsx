@@ -25,6 +25,14 @@ interface WorkspaceState {
   migrationHalt: { halted: boolean; haltReasons: string[] } | null;
 }
 
+interface MigrationRecommendation {
+  mode: string | null;
+  onRamp: string;
+  blocked: boolean;
+  blockReasons: string[];
+  maturityReconciliation: { adjusted: boolean; priorLevel: number; reconciledLevel: number; note: string };
+}
+
 export function DiagnosticsWorkspace({
   entityId,
   entityName,
@@ -36,6 +44,11 @@ export function DiagnosticsWorkspace({
   const [scores, setScores] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [immuneSystem, setImmuneSystem] = useState<"weak" | "moderate" | "strong">("moderate");
+  const [headcount, setHeadcount] = useState(50);
+  const [maturityLevel, setMaturityLevel] = useState(2);
+  const [migrationRec, setMigrationRec] = useState<MigrationRecommendation | null>(null);
+  const [recommending, setRecommending] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`${apiBase}/api/v1/diagnostics/${entityId}`, { headers });
@@ -92,6 +105,28 @@ export function DiagnosticsWorkspace({
     );
     if (!res.ok) throw new Error("Complete step failed");
     setState(await res.json());
+  };
+
+  const requestMigrationRecommend = async () => {
+    setRecommending(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `${apiBase}/api/v1/diagnostics/${entityId}/migration-recommend`,
+        {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ immuneSystem, headcount, maturityLevel }),
+        },
+      );
+      if (!res.ok) throw new Error("Migration recommendation failed");
+      const data = await res.json();
+      setMigrationRec(data);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRecommending(false);
+    }
   };
 
   if (error && !state) return <p role="alert">{error}</p>;
@@ -181,6 +216,61 @@ export function DiagnosticsWorkspace({
           Migration halted — red gates: {state.migrationHalt.haltReasons.join(", ")}
         </div>
       )}
+
+      <div className="migration-recommend-panel" data-testid="migration-recommend">
+        <h3>Migration recommendation</h3>
+        <div className="migration-form">
+          <label>
+            Immune system strength
+            <select
+              value={immuneSystem}
+              onChange={(e) => setImmuneSystem(e.target.value as "weak" | "moderate" | "strong")}
+            >
+              <option value="weak">Weak</option>
+              <option value="moderate">Moderate</option>
+              <option value="strong">Strong</option>
+            </select>
+          </label>
+          <label>
+            Headcount
+            <input
+              type="number"
+              min={1}
+              value={headcount}
+              onChange={(e) => setHeadcount(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Maturity level (0–5)
+            <input
+              type="number"
+              min={0}
+              max={5}
+              value={maturityLevel}
+              onChange={(e) => setMaturityLevel(Number(e.target.value))}
+            />
+          </label>
+          <button type="button" onClick={requestMigrationRecommend} disabled={recommending}>
+            {recommending ? "Recommending…" : "Get migration recommendation"}
+          </button>
+        </div>
+        {migrationRec && (
+          <div className="migration-result">
+            {migrationRec.blocked ? (
+              <p role="alert">
+                <strong>Blocked</strong> — {migrationRec.blockReasons.join("; ")}
+              </p>
+            ) : (
+              <p>
+                <strong>Mode:</strong> {migrationRec.mode} · <strong>On-ramp:</strong> {migrationRec.onRamp}
+              </p>
+            )}
+            {migrationRec.maturityReconciliation.adjusted && (
+              <p className="maturity-note">{migrationRec.maturityReconciliation.note}</p>
+            )}
+          </div>
+        )}
+      </div>
 
       {error && <p role="alert" className="error">{error}</p>}
     </section>

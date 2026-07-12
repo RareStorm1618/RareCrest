@@ -1,29 +1,17 @@
-<!--lint disable no-undefined-references strong-marker-->
-
 # Implementation Plan: WO-32
 
-**Work Order:** WO-32 — WO-32 RareCrest implementation
-**Created At (UTC):** 2026-07-11T23:54:40Z
+**Work Order:** WO-32 — Implement MigrationRecommender (API Server)
 
 ## Summary
 
-_1-3 sentences: what this work order delivers and the high-level approach._
+Production MigrationRecommender: captures immune-system strength + headcount, recommends Direct/Edge/Light Edge mode per REQ-DIAG-007, band-consistent on-ramp, maturity ladder reconciliation per REQ-DIAG-006.2, and blocks when DeploymentGateService verdict indicates deployment lock or migration halt.
 
-## Code Reuse And Package Structure
+## Deliverables
 
-_List critical existing files/components/services/hooks/utilities/schemas/tests to reuse or import as dependencies. Note reuse/extract/follow-pattern decisions. Then list files/packages/directories intentionally created or modified by this plan, grouped by module or layer. Do not list incidental import-order, barrel export, formatting, generated-code, or mechanical follow-on edits._
+- `packages/diagnostics/src/migration.ts` — domain logic + 11 tests
+- `apps/api/src/services/migration-recommender.ts` — loads assessment, persists recommendation
+- `apps/api/src/routes/migration-routes.ts` — `POST /api/v1/diagnostics/:entityId/migration-recommend`
 
-## Components And Flow
+## Evidence
 
-_Name Blueprint-defined components, supporting components, important interfaces/signatures, and call/data flow._
-
-## Steps
-
-_Ordered implementation steps. Each step should produce a reviewable, preferably compilable intermediate state. Note parallelizable steps (touch different files, no dependency)._
-
-1. **[title]** - _what to do, where_
-2. **[title]** - _what to do, where_
-
-## Testing
-
-_Automated and manual tests: suites, new/changed test files, scenarios, and commands. Not for requirements/blueprint conformance—that belongs in review._
+Validators exit 0; review-log APPROVED code_grade 10.

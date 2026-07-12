@@ -13,6 +13,7 @@ import {
 import { registerPhaseRoutes } from "./routes/phase-routes.js";
 import { registerPortfolioRoutes } from "./routes/portfolio-routes.js";
 import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes.js";
+import { registerMigrationRoutes } from "./routes/migration-routes.js";
 import { PortfolioService } from "./services/portfolio.js";
 import { z } from "zod";
 
@@ -56,6 +57,7 @@ export async function buildApp() {
   registerPhaseRoutes(app, db, governance, intelligence);
   registerPortfolioRoutes(app, new PortfolioService(db));
   registerDiagnosticsRoutes(app, db);
+  registerMigrationRoutes(app, db);
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

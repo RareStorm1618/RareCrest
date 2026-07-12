@@ -136,15 +136,7 @@ export function registerPhaseRoutes(
     return reply.send({ valid: errors.length === 0, errors, deployable: errors.length === 0 });
   });
 
-  // WO-32: MigrationRecommender
-  app.post("/api/v1/diagnostics/migration-recommend", async (request, reply) => {
-    const schema = z.object({ entityId: z.string().uuid(), currentStack: z.array(z.string()) });
-    const body = schema.parse(request.body);
-    return reply.send({
-      entityId: body.entityId,
-      recommendations: body.currentStack.map((s) => ({ from: s, to: `rarecrest-${s}`, priority: "high" })),
-    });
-  });
+  // WO-32: MigrationRecommender — see migration-routes.ts (canonical)
 
   // WO-33: TaskDecompositionMatrix
   app.post("/api/v1/diagnostics/task-decomposition", async (request, reply) => {

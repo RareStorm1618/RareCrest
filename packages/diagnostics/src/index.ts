@@ -170,3 +170,5 @@ export function isRetakeDue(completedAt: string | null): boolean {
   const sixMonthsMs = 183 * 24 * 60 * 60 * 1000;
   return Date.now() - new Date(completedAt).getTime() > sixMonthsMs;
 }
+
+export * from "./migration.js";
