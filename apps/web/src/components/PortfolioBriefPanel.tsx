@@ -3,6 +3,7 @@ import type { PortfolioRollup } from "@rarecrest/contracts";
 import { buildPortfolioBrief } from "../lib/portfolio-brief.js";
 import { navigate } from "../lib/routing.js";
 import { rememberEntity } from "../lib/entity-memory.js";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface PortfolioBriefPanelProps {
   rollup: PortfolioRollup;
@@ -10,6 +11,13 @@ interface PortfolioBriefPanelProps {
 
 export function PortfolioBriefPanel({ rollup }: PortfolioBriefPanelProps) {
   const brief = useMemo(() => buildPortfolioBrief(rollup), [rollup]);
+
+  const schemaMetrics: ResultCardMetric[] = [
+    { label: "Total entities", value: brief.schema.totalEntities as number },
+    { label: "Attention flags", value: brief.schema.attentionFlagCount as number },
+    { label: "Portfolio clear", value: brief.schema.portfolioClear ? "Yes" : "No" },
+    { label: "Critical signals", value: brief.schema.criticalCount as number },
+  ];
 
   return (
     <section className="portfolio-brief" data-testid="portfolio-brief">
@@ -43,8 +51,7 @@ export function PortfolioBriefPanel({ rollup }: PortfolioBriefPanelProps) {
           ))}
         </div>
         <aside className="brief-schema" aria-label="Machine schema">
-          <h3>Structured brief</h3>
-          <pre>{JSON.stringify(brief.schema, null, 2)}</pre>
+          <ResultCard title="Structured brief" metrics={schemaMetrics} raw={brief.schema} />
           <p className="schema-note">Generated {new Date(brief.generatedAt).toLocaleTimeString()}</p>
         </aside>
       </div>

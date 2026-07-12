@@ -1,9 +1,21 @@
 import { useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface ShortcutAssessmentViewProps {
   entityId: string;
   apiBase: string;
   headers: Record<string, string>;
+}
+
+interface ShortcutAssessmentResult {
+  entityId?: string;
+  assessment?: {
+    shortcutReady?: boolean;
+    exportableCoveragePct?: number;
+    totalRecords?: number;
+    highVolatilitySystems?: string[];
+    blockerReasons?: string[];
+  };
 }
 
 export function ShortcutAssessmentView({ entityId, apiBase, headers }: ShortcutAssessmentViewProps) {
@@ -23,7 +35,7 @@ export function ShortcutAssessmentView({ entityId, apiBase, headers }: ShortcutA
       2,
     ),
   );
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<ShortcutAssessmentResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -59,7 +71,20 @@ export function ShortcutAssessmentView({ entityId, apiBase, headers }: ShortcutA
       <button type="button" onClick={assess} disabled={loading}>
         {loading ? "Assessing..." : "Assess inventory"}
       </button>
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result?.assessment && (
+        <ResultCard
+          title="Shortcut Assessment"
+          metrics={
+            [
+              { label: "Shortcut ready", value: result.assessment.shortcutReady ? "Yes" : "No" },
+              { label: "Exportable coverage", value: `${result.assessment.exportableCoveragePct ?? 0}%` },
+              { label: "Total records", value: result.assessment.totalRecords ?? 0 },
+              { label: "Blockers", value: result.assessment.blockerReasons?.length ?? 0 },
+            ] satisfies ResultCardMetric[]
+          }
+          raw={result}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

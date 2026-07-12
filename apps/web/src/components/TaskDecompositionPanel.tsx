@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
-import { TASK_CATEGORIES, type TaskCategory } from "@rarecrest/diagnostics";
+import { useCallback, useMemo, useState } from "react";
+import { TASK_CATEGORIES, type TaskCategory, type TaskDecompositionExport } from "@rarecrest/diagnostics";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface TaskDecompositionPanelProps {
   entityId: string;
@@ -30,7 +31,7 @@ export function TaskDecompositionPanel({ entityId, apiBase, headers }: TaskDecom
     },
   ]);
   const [matrixId, setMatrixId] = useState<string | null>(null);
-  const [exportData, setExportData] = useState<Record<string, unknown> | null>(null);
+  const [exportData, setExportData] = useState<TaskDecompositionExport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -59,6 +60,23 @@ export function TaskDecompositionPanel({ entityId, apiBase, headers }: TaskDecom
       setBusy(false);
     }
   }, [apiBase, entityId, functionName, headers, matrixId, roles]);
+
+  const exportMetrics: ResultCardMetric[] | undefined = exportData?.summary
+    ? [
+        { label: "Total tasks", value: exportData.summary.totalTasks },
+        { label: "Deploy now", value: exportData.summary.deployNow },
+        { label: "Pilot", value: exportData.summary.pilot },
+        { label: "Keep human-led", value: exportData.summary.keepHumanLed },
+      ]
+    : undefined;
+
+  const exportTasks = useMemo(
+    () =>
+      (exportData?.roles ?? []).flatMap((role) =>
+        role.tasks.map((task) => ({ ...task, roleName: role.name })),
+      ),
+    [exportData],
+  );
 
   const completeAndExport = async () => {
     setBusy(true);
@@ -93,7 +111,7 @@ export function TaskDecompositionPanel({ entityId, apiBase, headers }: TaskDecom
         { headers },
       );
       if (!exportRes.ok) throw new Error("Export failed");
-      setExportData(await exportRes.json());
+      setExportData((await exportRes.json()) as TaskDecompositionExport);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -169,9 +187,37 @@ export function TaskDecompositionPanel({ entityId, apiBase, headers }: TaskDecom
         <button type="button" onClick={completeAndExport} disabled={busy}>Complete &amp; export</button>
       </div>
       {exportData && (
-        <pre className="export-preview" data-testid="task-decomposition-export">
-          {JSON.stringify(exportData, null, 2)}
-        </pre>
+        <ResultCard
+          title="Task Decomposition Export"
+          summary={`${exportData.functionName || "Unnamed function"} · ${exportData.status}`}
+          metrics={exportMetrics}
+          raw={exportData}
+        >
+          {exportTasks.length > 0 && (
+            <table className="task-decomposition-export-table" data-testid="task-decomposition-export">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Task</th>
+                  <th>Category</th>
+                  <th>Score</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exportTasks.map((task) => (
+                  <tr key={task.id}>
+                    <td>{task.roleName}</td>
+                    <td>{task.title}</td>
+                    <td>{task.category}</td>
+                    <td>{task.agentReadinessScore ?? "—"}</td>
+                    <td>{task.deploymentAction ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </ResultCard>
       )}
       {error && <p role="alert">{error}</p>}
     </div>

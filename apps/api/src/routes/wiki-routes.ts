@@ -106,7 +106,7 @@ export function registerWikiRoutes(app: FastifyInstance, db: DatabaseClient) {
       if (body.entityId) await assertEntityAccess(db, body.entityId, request.auth);
       const namespace = wiki.resolveNamespace(body);
       await assertWikiAccess(db, request.auth, request.headers as never, namespace, body.vertical);
-      wiki.assertRateLimit(`ingest:${request.auth.userId}`, 120, 60_000);
+      await wiki.assertRateLimitDb(`ingest:${request.auth.userId}`, 120, 60_000);
       const result = await wiki.ingest({
         namespace,
         vertical: body.vertical,

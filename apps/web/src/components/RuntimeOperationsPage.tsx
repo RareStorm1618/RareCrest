@@ -59,6 +59,18 @@ interface HumanInstructionRow {
 
 type KillSwitchAction = "arm" | "trigger" | "disarm";
 
+function formatRelativeToNow(iso: string): string {
+  const diffMs = new Date(iso).getTime() - Date.now();
+  const diffMinutes = Math.round(diffMs / 60_000);
+  const abs = Math.abs(diffMinutes);
+  if (abs < 60) return diffMinutes >= 0 ? `in ${abs}m` : `${abs}m ago`;
+  const diffHours = Math.round(diffMinutes / 60);
+  const absHours = Math.abs(diffHours);
+  if (absHours < 48) return diffHours >= 0 ? `in ${absHours}h` : `${absHours}h ago`;
+  const diffDays = Math.round(diffHours / 24);
+  return diffDays >= 0 ? `in ${Math.abs(diffDays)}d` : `${Math.abs(diffDays)}d ago`;
+}
+
 export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }: RuntimeOperationsPageProps) {
   const [agents, setAgents] = useState<AgentRosterEntry[]>([]);
   const [killSwitch, setKillSwitch] = useState<KillSwitchRow | null>(null);
@@ -487,16 +499,19 @@ export function RuntimeOperationsPage({ entityId, entityName, apiBase, headers }
               const revoked = Boolean(row.revokedAt);
               const expired = !revoked && new Date(row.expiresAt).getTime() <= Date.now();
               return (
-                <li key={row.id} className={revoked ? "revoked" : undefined}>
+                <li key={row.id} className={revoked ? "revoked" : expired ? "expired" : undefined}>
                   <span>
                     <strong>{row.actionScope}</strong> — {row.instruction}
                     <small>
-                      Expires {new Date(row.expiresAt).toLocaleString()}
+                      Expires {new Date(row.expiresAt).toLocaleString()} ({formatRelativeToNow(row.expiresAt)})
                       {revoked && " — REVOKED"}
-                      {expired && !revoked && " — EXPIRED"}
                     </small>
                   </span>
-                  {!revoked && (
+                  {revoked ? null : expired ? (
+                    <span className="status-pill status-expired" data-testid="human-instruction-expired">
+                      EXPIRED
+                    </span>
+                  ) : (
                     <button
                       type="button"
                       onClick={() => revokeHumanInstruction(row.id)}

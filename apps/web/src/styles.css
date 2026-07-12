@@ -314,6 +314,36 @@ ul[role="alert"] { color: #ff6b6b; }
 .section-wiki_health .command-card { border-left: 3px solid #4a9eff; }
 .section-resolved .command-card { border-left: 3px solid #4ade80; }
 
+.ops-strip { display: flex; gap: 0.6rem; margin-bottom: 1rem; }
+.ops-badge {
+  padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+}
+.ops-badge.ok { background: #1a3d2e; color: #4ade80; }
+.ops-badge.down { background: #3d1a1a; color: #f87171; }
+
+.attention-queue-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
+.attention-queue-item {
+  display: flex; align-items: center; gap: 0.85rem; background: #151821; border: 1px solid #2f3648;
+  border-radius: 6px; padding: 0.7rem 0.9rem;
+}
+.attention-queue-body { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }
+.attention-queue-message { color: #b8c0cc; font-size: 0.9rem; }
+.attention-queue-actions { display: flex; gap: 0.5rem; }
+.attention-queue-actions button {
+  background: #1c2230; border: 1px solid #3a4050; color: #e8eaed; border-radius: 4px;
+  padding: 0.35rem 0.75rem; cursor: pointer; font: inherit; font-size: 0.85rem;
+}
+.attention-queue-actions button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.severity-badge {
+  padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700;
+  text-transform: uppercase; white-space: nowrap;
+}
+.severity-badge.severity-critical { background: #3d1a1a; color: #f87171; }
+.severity-badge.severity-high { background: #3d281a; color: #fb923c; }
+.severity-badge.severity-medium { background: #3d3a1a; color: #fbbf24; }
+.severity-badge.severity-low { background: #1a3d2e; color: #4ade80; }
+
 .entity-register-panel { background: #10141c; border: 1px solid #2a3040; border-radius: 8px; padding: 1rem; margin-top: 1.5rem; }
 .entity-register-panel h3 { margin: 0 0 0.75rem; }
 .entity-register-form {
@@ -395,6 +425,14 @@ ul[role="alert"] { color: #ff6b6b; }
 .result-card-raw { color: #9aa3b2; font-size: 0.8rem; }
 .result-card-raw summary { cursor: pointer; }
 .result-card-raw pre { margin-top: 0.5rem; }
+.task-decomposition-export-table, .from-zero-plan-table {
+  width: 100%; border-collapse: collapse; font-size: 0.85rem; color: #d5dae3;
+}
+.task-decomposition-export-table th, .task-decomposition-export-table td,
+.from-zero-plan-table th, .from-zero-plan-table td {
+  border-bottom: 1px solid #2a3040; padding: 0.4rem 0.5rem; text-align: left;
+}
+.task-decomposition-export-table th, .from-zero-plan-table th { color: #9aa3b2; font-weight: 500; }
 
 .director-tools {
   margin-top: 1.5rem; background: #10141c; border: 1px solid #2a3040; border-radius: 6px; padding: 0.85rem;
@@ -427,5 +465,7 @@ ul[role="alert"] { color: #ff6b6b; }
   background: #0f131b; border: 1px solid #2f3648; border-radius: 4px; padding: 0.5rem 0.65rem; font-size: 0.85rem; color: #d5dae3;
 }
 .human-instructions-list li.revoked { opacity: 0.55; }
+.human-instructions-list li.expired { border-color: #4a3030; }
 .human-instructions-list small { display: block; color: #6f788a; }
+.status-pill.status-expired { background: #3d1a1a; color: #f87171; }
 

@@ -1,9 +1,21 @@
 import { useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface CapabilityAndAgencyViewProps {
   entityId: string;
   apiBase: string;
   headers: Record<string, string>;
+}
+
+interface CapabilityAndAgencyResult {
+  coverage?: {
+    coveragePct?: number;
+    covered?: string[];
+    gaps?: Array<{ capabilityId: string; reason: string }>;
+  };
+  agencyMap?: {
+    agencyMap?: Array<{ agency: string; riskLevel: string; staffedCapabilities?: number; totalCapabilities?: number }>;
+  };
 }
 
 export function CapabilityAndAgencyView({ entityId, apiBase, headers }: CapabilityAndAgencyViewProps) {
@@ -17,7 +29,7 @@ export function CapabilityAndAgencyView({ entityId, apiBase, headers }: Capabili
       2,
     ),
   );
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<CapabilityAndAgencyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -57,7 +69,23 @@ export function CapabilityAndAgencyView({ entityId, apiBase, headers }: Capabili
       <button type="button" onClick={evaluate} disabled={loading}>
         {loading ? "Evaluating..." : "Run capability checks"}
       </button>
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result && (
+        <ResultCard
+          title="Capability Coverage and Agency Map"
+          metrics={
+            [
+              { label: "Coverage", value: `${result.coverage?.coveragePct ?? 0}%` },
+              { label: "Covered", value: result.coverage?.covered?.length ?? 0 },
+              { label: "Gaps", value: result.coverage?.gaps?.length ?? 0 },
+              {
+                label: "High-risk agencies",
+                value: result.agencyMap?.agencyMap?.filter((a) => a.riskLevel === "high").length ?? 0,
+              },
+            ] satisfies ResultCardMetric[]
+          }
+          raw={result}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

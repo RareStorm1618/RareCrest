@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ResultCard, type ResultCardMetric } from "./ResultCard.js";
 
 interface WikiPageProps {
   entityId: string;
@@ -25,6 +26,13 @@ interface QueryCitation {
 }
 
 const BRIDGE_VERTICALS = ["rarestorm", "rareangels", "rareedge", "hopecoin", "healkids", "holding"] as const;
+
+interface WikiDoctorGraph {
+  nodeCount?: number;
+  edgeCount?: number;
+  orphans?: string[];
+  hubs?: Array<{ slug: string; degree: number }>;
+}
 
 interface ContradictionRow {
   id: string;
@@ -80,6 +88,23 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
     () => ({ ...headers, "Content-Type": "application/json", Accept: "application/json" }),
     [headers],
   );
+
+  // WikiService.doctor() typically returns { namespace, ok, graph: { nodeCount, edgeCount,
+  // orphans, hubs }, hasHotCache, missingRequired }. runVaultPackage() reuses this same
+  // state slot for { vaultPackage: {...} } — only surface metrics when the graph shape is present.
+  const doctorMetrics: ResultCardMetric[] | undefined = useMemo(() => {
+    if (!doctor || !("graph" in doctor)) return undefined;
+    const graph = doctor.graph as WikiDoctorGraph | undefined;
+    const missingRequired = (doctor.missingRequired as string[] | undefined) ?? [];
+    return [
+      { label: "Nodes", value: graph?.nodeCount ?? 0 },
+      { label: "Orphans", value: graph?.orphans?.length ?? 0 },
+      { label: "Hubs", value: graph?.hubs?.length ?? 0 },
+      { label: "Missing required", value: missingRequired.length > 0 ? missingRequired.join(", ") : "None" },
+      { label: "Hot cache", value: doctor.hasHotCache ? "Yes" : "No" },
+      { label: "Status", value: doctor.ok ? "OK" : "Issues found" },
+    ];
+  }, [doctor]);
 
   useEffect(() => {
     setActiveVertical(vertical);
@@ -590,7 +615,7 @@ export function WikiPage({ entityId, entityName, vertical, apiBase, headers }: W
           )}
 
           {doctor && (
-            <pre className="wiki-doctor">{JSON.stringify(doctor, null, 2)}</pre>
+            <ResultCard title="Wiki Doctor" metrics={doctorMetrics} raw={doctor} />
           )}
 
           <div className="wiki-ingest">

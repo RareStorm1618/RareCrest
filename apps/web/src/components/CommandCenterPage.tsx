@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PortfolioRollup } from "@rarecrest/contracts";
-import { navigate } from "../lib/routing.js";
+import { navigate, parseHash } from "../lib/routing.js";
 import { rememberEntity } from "../lib/entity-memory.js";
 
 interface CommandCenterPageProps {
@@ -26,7 +26,6 @@ interface MorningBrief {
   unchanged: boolean;
   sections: BriefSection[];
   generatedAt: string;
-  portfolioClear: boolean;
 }
 
 interface PriorityItem {
@@ -52,6 +51,20 @@ interface AttentionQueueItem {
   kind: "decision" | "awareness";
 }
 
+interface CommandDashboardResponse {
+  brief: MorningBrief;
+  ranked: PriorityItem[];
+  queue: AttentionQueueItem[];
+  portfolioClear: boolean;
+}
+
+interface BackupStatus {
+  walArchiving: boolean;
+  databaseHealthy: boolean;
+  lastChecklist: string;
+  generatedAt: string;
+}
+
 const SECTION_LABELS: Record<string, string> = {
   new_decisions: "New decisions",
   resolved: "Resolved",
@@ -73,11 +86,26 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
   const [portfolioClear, setPortfolioClear] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      const dashboardRes = await fetch(`${apiBase}/api/v1/command/dashboard`, { headers });
+      if (dashboardRes.ok) {
+        const data = (await dashboardRes.json()) as CommandDashboardResponse;
+        setBrief(data.brief);
+        setPriorities(data.ranked ?? []);
+        setQueue(data.queue ?? []);
+        setPortfolioClear(data.portfolioClear ?? true);
+        return;
+      }
+      if (dashboardRes.status !== 404) {
+        throw new Error(await dashboardRes.text());
+      }
+      // Fallback for older API deployments without /command/dashboard.
       const [briefRes, prioritiesRes, queueRes] = await Promise.all([
         fetch(`${apiBase}/api/v1/command/morning-brief`, { headers }),
         fetch(`${apiBase}/api/v1/command/priorities`, { headers }),
@@ -86,7 +114,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
       if (!briefRes.ok) throw new Error(await briefRes.text());
       if (!prioritiesRes.ok) throw new Error(await prioritiesRes.text());
       if (!queueRes.ok) throw new Error(await queueRes.text());
-      const briefData = (await briefRes.json()) as MorningBrief;
+      const briefData = (await briefRes.json()) as MorningBrief & { portfolioClear?: boolean };
       const prioritiesData = (await prioritiesRes.json()) as { ranked: PriorityItem[] };
       const queueData = (await queueRes.json()) as { items: AttentionQueueItem[]; portfolioClear: boolean };
       setBrief(briefData);
@@ -100,15 +128,66 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
     }
   }, [apiBase, headers]);
 
+  const loadOpsStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/v1/ops/backup-status`, { headers });
+      if (res.status === 403) {
+        setBackupStatus(null);
+        return;
+      }
+      if (!res.ok) return;
+      setBackupStatus((await res.json()) as BackupStatus);
+    } catch {
+      setBackupStatus(null);
+    }
+  }, [apiBase, headers]);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadOpsStatus();
+  }, [load, loadOpsStatus]);
 
-  const goToItem = (entityId: string | null) => {
-    if (!entityId) return;
-    const entity = rollup?.entities.find((e) => e.id === entityId);
-    if (entity) rememberEntity({ id: entity.id, name: entity.name });
-    navigate({ name: "diagnostics", entityId });
+  const rememberIfKnown = useCallback(
+    (entityId: string | null) => {
+      if (!entityId) return;
+      const entity = rollup?.entities.find((e) => e.id === entityId);
+      if (entity) rememberEntity({ id: entity.id, name: entity.name });
+    },
+    [rollup],
+  );
+
+  /** Navigate using a server-provided linkPath (e.g. `#/entities/{id}/wiki` or `#/command`). */
+  const goToLink = useCallback(
+    (linkPath: string | null | undefined, entityId?: string | null) => {
+      if (linkPath) {
+        const hash = linkPath.startsWith("#") ? linkPath : `#${linkPath}`;
+        navigate(parseHash(hash));
+        rememberIfKnown(entityIdFromLinkPath(linkPath) ?? entityId ?? null);
+        return;
+      }
+      if (entityId) {
+        rememberIfKnown(entityId);
+        navigate({ name: "diagnostics", entityId });
+      }
+    },
+    [rememberIfKnown],
+  );
+
+  const resolveFlag = async (item: AttentionQueueItem) => {
+    setResolvingId(item.id);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/entities/${item.entityId}/attention-flags/${item.id}/resolve`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ resolutionNote: "Resolved from Command Center" }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resolve attention flag");
+    } finally {
+      setResolvingId(null);
+    }
   };
 
   const severityCounts = queue.reduce<Record<string, number>>((acc, item) => {
@@ -136,6 +215,17 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
         </div>
       </header>
 
+      {backupStatus && (
+        <div className="ops-strip" data-testid="ops-strip">
+          <span className={`ops-badge ${backupStatus.databaseHealthy ? "ok" : "down"}`}>
+            DB {backupStatus.databaseHealthy ? "healthy" : "unhealthy"}
+          </span>
+          <span className={`ops-badge ${backupStatus.walArchiving ? "ok" : "down"}`}>
+            WAL {backupStatus.walArchiving ? "archiving" : "off"}
+          </span>
+        </div>
+      )}
+
       {error && (
         <p className="wiki-error" role="alert">
           {error}
@@ -158,13 +248,14 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
                   <div className="command-card-grid">
                     {section.items.map((item) => {
                       const entityId = entityIdFromLinkPath(item.linkPath);
+                      const clickable = Boolean(entityId) || item.linkPath === "#/command";
                       return (
                         <button
                           key={item.id}
                           type="button"
                           className="command-card"
-                          disabled={!entityId}
-                          onClick={() => goToItem(entityId)}
+                          disabled={!clickable}
+                          onClick={() => goToLink(item.linkPath, entityId)}
                         >
                           <span className="command-card-label">{item.label}</span>
                           <small>{item.sourceFeature}</small>
@@ -190,7 +281,7 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
                 key={item.itemId}
                 type="button"
                 className="command-card priority-card"
-                onClick={() => goToItem(item.entityId)}
+                onClick={() => goToLink(null, item.entityId)}
               >
                 <span className="priority-rank">#{item.rank}</span>
                 <span className="command-card-label">{item.label}</span>
@@ -217,6 +308,31 @@ export function CommandCenterPage({ apiBase, headers, rollup }: CommandCenterPag
             </div>
           ))}
         </div>
+        <ul className="attention-queue-list">
+          {queue.map((item) => (
+            <li key={item.id} className="attention-queue-item" data-testid="attention-queue-item">
+              <span className={`severity-badge severity-${item.severity}`}>{item.severity}</span>
+              <div className="attention-queue-body">
+                <strong>{item.entityName ?? item.entityId}</strong>
+                <span className="attention-queue-message">{item.message}</span>
+                <small>{item.kind}</small>
+              </div>
+              <div className="attention-queue-actions">
+                <button type="button" onClick={() => goToLink(item.linkPath, item.entityId)}>
+                  View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => resolveFlag(item)}
+                  disabled={resolvingId === item.id}
+                >
+                  {resolvingId === item.id ? "Resolving…" : "Resolve"}
+                </button>
+              </div>
+            </li>
+          ))}
+          {queue.length === 0 && <li className="wiki-empty">No open attention signals</li>}
+        </ul>
       </div>
     </section>
   );

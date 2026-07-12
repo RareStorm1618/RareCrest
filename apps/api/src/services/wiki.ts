@@ -551,11 +551,16 @@ export class WikiService {
     // Agents (and any caller opting out of drafts) see canon-only pages by default.
     const includeDrafts = opts?.includeDrafts ?? true;
     const hot = await this.db.query(`SELECT body FROM rarecrest.wiki_hot_cache WHERE namespace = $1`, [namespace]);
+    // hybridRank needs full body for lexical scoring, so we can't project to a preview column here —
+    // instead bound the candidate set with ORDER BY updated_at DESC LIMIT 100 (namespaces rarely need
+    // more than the most recently touched 100 pages to answer a question) to cap query() work.
     const pages = await this.db.query(
       `SELECT id, slug, title, body, sensitivity
        FROM rarecrest.wiki_pages
        WHERE namespace = $1 AND page_type NOT IN ('log')
-         ${includeDrafts ? "" : "AND status = 'canon'"}`,
+         ${includeDrafts ? "" : "AND status = 'canon'"}
+       ORDER BY updated_at DESC
+       LIMIT 100`,
       [namespace],
     );
     const visiblePages = redact
@@ -1040,7 +1045,7 @@ export class WikiService {
       throw new WikiError("Namespace not eligible for vault package", 403);
     }
     if (!input.skipRateLimit) {
-      this.assertRateLimit(`vault-package:${input.actorId}`, 10, 60_000);
+      await this.assertRateLimitDb(`vault-package:${input.actorId}`, 10, 60_000);
     }
 
     const kek = input.passphrase || loadSecret("WIKI_VAULT_PACKAGE_KEK");
@@ -1144,7 +1149,7 @@ export class WikiService {
     if (!isDirectorObsidianNamespace(input.namespace)) {
       throw new WikiError("Namespace not eligible for vault package", 403);
     }
-    this.assertRateLimit(`vault-package:${input.actorId}`, 10, 60_000);
+    await this.assertRateLimitDb(`vault-package:${input.actorId}`, 10, 60_000);
     const threshold = input.asyncThreshold ?? 25;
     const pages = await this.listPages(input.namespace);
     const eligible = pages.filter((p) => isObsidianSyncSafeSensitivity(String(p.sensitivity)));
