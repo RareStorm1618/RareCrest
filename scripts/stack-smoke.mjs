@@ -27,17 +27,35 @@ async function checkDatabase() {
   await db.close();
 }
 
+async function waitForHealth(url, timeoutMs = 60000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return;
+    } catch {
+      // server not ready yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`timeout waiting for ${url}`);
+}
+
 async function checkGovernanceRpc() {
   const port = 3011;
-  const child = spawn("cargo", ["run", "-p", "governance-engine"], {
-    env: { ...process.env, GOVERNANCE_PORT: String(port) },
-    stdio: "ignore",
-  });
+  const bin = process.env.GOVERNANCE_BIN;
+  const child = bin
+    ? spawn(bin, [], {
+        env: { ...process.env, GOVERNANCE_PORT: String(port) },
+        stdio: "ignore",
+      })
+    : spawn("cargo", ["run", "-p", "governance-engine"], {
+        env: { ...process.env, GOVERNANCE_PORT: String(port) },
+        stdio: "ignore",
+      });
 
-  await new Promise((r) => setTimeout(r, 2500));
   try {
-    const health = await fetch(`http://127.0.0.1:${port}/health`);
-    if (!health.ok) throw new Error(`governance health ${health.status}`);
+    await waitForHealth(`http://127.0.0.1:${port}/health`);
 
     const verdict = await fetch(`http://127.0.0.1:${port}/rpc/hard-rule-check`, {
       method: "POST",

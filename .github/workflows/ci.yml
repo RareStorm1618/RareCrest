@@ -78,7 +78,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://rarecrest:rarecrest_dev@localhost:5432/rarecrest
         run: node packages/db/dist/migrate.js
+      - name: Build governance engine
+        run: cargo build -p governance-engine --release
       - name: Stack smoke
         env:
           DATABASE_URL: postgresql://rarecrest:rarecrest_dev@localhost:5432/rarecrest
+          GOVERNANCE_BIN: ${{ github.workspace }}/target/release/governance-engine
         run: node scripts/stack-smoke.mjs
