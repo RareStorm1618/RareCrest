@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Cross-service smoke checks for CI and local stack verification */
 import { spawn } from "node:child_process";
-import { DatabaseClient } from "@rarecrest/db";
+import { DatabaseClient } from "../packages/db/dist/index.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
