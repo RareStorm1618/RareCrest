@@ -11,6 +11,8 @@ import {
   validate,
 } from "./validation.js";
 import { registerPhaseRoutes } from "./routes/phase-routes.js";
+import { registerPortfolioRoutes } from "./routes/portfolio-routes.js";
+import { PortfolioService } from "./services/portfolio.js";
 import { z } from "zod";
 
 const PORT = Number(process.env.API_PORT ?? 3000);
@@ -51,6 +53,7 @@ export async function buildApp() {
   });
 
   registerPhaseRoutes(app, db, governance, intelligence);
+  registerPortfolioRoutes(app, new PortfolioService(db));
 
   app.post("/api/v1/entities", async (request, reply) => {
     try {

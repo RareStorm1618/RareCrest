@@ -58,21 +58,7 @@ export function registerPhaseRoutes(
     return reply.status(204).send();
   });
 
-  // WO-24: PortfolioRollupService
-  app.get("/api/v1/portfolio/status", async (request, reply) => {
-    enforceTenancy(request.auth, request.auth.vertical);
-    const result = await db.query(
-      `SELECT id, name, vertical, mode, band FROM rarecrest.entities
-       WHERE vertical = $1 AND deleted_at IS NULL`,
-      [request.auth.vertical],
-    );
-    const summary: Record<string, number> = {};
-    for (const row of result.rows) {
-      const band = (row as { band: string }).band;
-      summary[band] = (summary[band] ?? 0) + 1;
-    }
-    return reply.send({ entities: result.rows, summary });
-  });
+  // WO-24: PortfolioRollupService — see portfolio-routes.ts (canonical)
 
   // WO-25: AssessmentSequencer
   app.post("/api/v1/assessments", async (request, reply) => {

@@ -38,6 +38,7 @@ const VALID_VERTICALS: VerticalKey[] = [
   "rareedge",
   "hopecoin",
   "healkids",
+  "holding",
 ];
 
 function isValidVertical(v: string): v is VerticalKey {

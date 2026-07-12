@@ -7,6 +7,7 @@ export const verticalSchema = z.enum([
   "rareedge",
   "hopecoin",
   "healkids",
+  "holding",
 ]);
 
 export const createEntitySchema = z.object({

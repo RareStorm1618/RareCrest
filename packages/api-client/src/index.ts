@@ -3,6 +3,7 @@ import type {
   EntityState,
   HardRuleCheckRequest,
   HardRuleVerdict,
+  PortfolioRollup,
   ValidationErrorResponse,
 } from "@rarecrest/contracts";
 
@@ -55,8 +56,25 @@ export class RareCrestApiClient {
     });
   }
 
-  async getPortfolioStatus(): Promise<{ entities: EntityState[]; summary: Record<string, number> }> {
+  async getPortfolioStatus(): Promise<PortfolioRollup> {
     return this.request("/api/v1/portfolio/status");
+  }
+
+  async registerEntity(body: {
+    name: string;
+    vertical: string;
+    tenancyKey: string;
+    entityType: string;
+    isHoldingEntity?: boolean;
+  }): Promise<EntityState> {
+    return this.request("/api/v1/portfolio/entities", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async getEntityDetail(id: string): Promise<EntityState & { attentionFlags: unknown[]; relationships: unknown[] }> {
+    return this.request(`/api/v1/portfolio/entities/${id}`);
   }
 }
 

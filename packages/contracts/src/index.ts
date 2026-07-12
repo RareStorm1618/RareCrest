@@ -4,7 +4,24 @@ export type VerticalKey =
   | "rareangels"
   | "rareedge"
   | "hopecoin"
-  | "healkids";
+  | "healkids"
+  | "holding";
+
+export type EntityType =
+  | "nonprofit"
+  | "for_profit_platform"
+  | "fund"
+  | "token_protocol"
+  | "holding";
+
+export type GovernanceStatus =
+  | "not_assessed"
+  | "in_progress"
+  | "clear"
+  | "blocked"
+  | "hard_rule_exception";
+
+export type AttentionSeverity = "low" | "medium" | "high" | "critical";
 
 /** Agent rights — two-of-three rule */
 export type AgentRight = "sensitive_data" | "code_execution" | "external_comms";
@@ -58,11 +75,64 @@ export interface EntityState {
   name: string;
   vertical: VerticalKey;
   tenancyKey: string;
+  entityType: EntityType;
+  isHoldingEntity: boolean;
   mode: string;
   band: string;
+  regulatoryRegimes: string[];
+  governanceStatus: GovernanceStatus;
+  deploymentLocked: boolean;
+  maturityLevel: number;
+  assessedAt: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+}
+
+export interface AttentionFlag {
+  id: string;
+  entityId: string;
+  flagType: string;
+  severity: AttentionSeverity;
+  message: string;
+  linkPath: string | null;
+  createdAt: string;
+}
+
+export interface EntityRelationship {
+  id: string;
+  fromEntityId: string;
+  toEntityId: string;
+  relationshipType: string;
+  direction: string;
+  constraintNote: string | null;
+}
+
+export interface PortfolioEntitySummary {
+  id: string;
+  name: string;
+  vertical: VerticalKey;
+  entityType: EntityType;
+  isHoldingEntity: boolean;
+  mode: string;
+  band: string;
+  governanceStatus: GovernanceStatus;
+  deploymentLocked: boolean;
+  maturityLevel: number;
+  attentionFlagCount: number;
+  stateSummary: string;
+}
+
+export interface PortfolioRollup {
+  entities: PortfolioEntitySummary[];
+  summary: {
+    byBand: Record<string, number>;
+    byGovernanceStatus: Record<string, number>;
+    totalEntities: number;
+    attentionFlagCount: number;
+    portfolioClear: boolean;
+  };
+  generatedAt: string;
 }
 
 export interface ValidationErrorResponse {
